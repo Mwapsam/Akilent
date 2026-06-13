@@ -34,3 +34,6 @@ celerybeat.pid
 # OS
 .DS_Store
 Thumbs.db
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+celerybeat-schedule

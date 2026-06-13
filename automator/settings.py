@@ -122,12 +122,25 @@ if not DEBUG:
         raise ValueError("WHATSAPP_APP_SECRET is missing")
 
 # --- Bitrix ---
+BITRIX_CLIENT_ID = os.getenv("BITRIX_CLIENT_ID")
+BITRIX_CLIENT_SECRET = os.getenv("BITRIX_CLIENT_SECRET")
 
 BITRIX24_WEBHOOK_TIMEOUT = 10
 BITRIX24_OAUTH_REDIRECT_URL = os.getenv(
     "BITRIX24_OAUTH_REDIRECT_URL",
-    "http://localhost:8000/auth/bitrix/callback",
+    "http://localhost:8000/auth/bitrix/callback/",
 )
+
+if not DEBUG:
+    if not BITRIX_CLIENT_ID:
+        raise ValueError(
+            "BITRIX_CLIENT_ID missing"
+        )
+
+    if not BITRIX_CLIENT_SECRET:
+        raise ValueError(
+            "BITRIX_CLIENT_SECRET missing"
+        )
 
 # --- Celery ---
 
