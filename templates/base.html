@@ -14,8 +14,11 @@
       <div class="flex items-center gap-6">
         <a href="/dashboard/" class="font-semibold text-blue-600">Automator</a>
         <a href="/dashboard/" class="text-sm text-gray-600 hover:text-gray-900">Dashboard</a>
+        {% if WHATSAPP_ENABLED %}
         <a href="/whatsapp/numbers/" class="text-sm text-gray-600 hover:text-gray-900">WhatsApp</a>
+        {% endif %}
         <a href="/email/domains/" class="text-sm text-gray-600 hover:text-gray-900">Email</a>
+        <a href="/email/mailboxes/" class="text-sm text-gray-600 hover:text-gray-900">Mailboxes</a>
         <a href="/billing/plans/" class="text-sm text-gray-600 hover:text-gray-900">Billing</a>
       </div>
       <form method="post" action="/auth/logout/">

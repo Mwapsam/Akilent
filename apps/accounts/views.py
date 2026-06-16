@@ -55,10 +55,10 @@ def landing(request):
 
 def _onboarding_state(account):
     """Compute the onboarding checklist for an account."""
-    from apps.email.models import EmailApiKey, EmailDomain
-    from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
+    from django.conf import settings
 
-    has_number = WhatsAppBusinessNumber.objects.filter(account=account).exists()
+    from apps.email.models import EmailApiKey, EmailDomain
+
     has_verified_domain = EmailDomain.objects.filter(
         account=account, status=EmailDomain.Status.VERIFIED
     ).exists()
@@ -74,14 +74,21 @@ def _onboarding_state(account):
             "url": None,
             "cta": None,
         },
-        {
+    ]
+
+    if settings.WHATSAPP_ENABLED:
+        from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
+
+        steps.append({
             "key": "whatsapp",
             "title": "Connect a WhatsApp number",
             "desc": "Register your phone number ID and access token to start messaging.",
-            "done": has_number,
+            "done": WhatsAppBusinessNumber.objects.filter(account=account).exists(),
             "url": "/whatsapp/numbers/",
             "cta": "Add number",
-        },
+        })
+
+    steps += [
         {
             "key": "email_domain",
             "title": "Add a sending domain",
@@ -127,11 +134,15 @@ def dashboard(request):
         # Authenticated user with no tenant (e.g. a staff-only admin user).
         return render(request, "accounts/dashboard.html", {"account": None})
 
-    from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
+    from django.conf import settings
 
-    numbers = WhatsAppBusinessNumber.objects.filter(account=account).order_by(
-        "phone_number_id"
-    )
+    numbers = []
+    if settings.WHATSAPP_ENABLED:
+        from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
+
+        numbers = WhatsAppBusinessNumber.objects.filter(account=account).order_by(
+            "phone_number_id"
+        )
 
     email_domains = []
     try:

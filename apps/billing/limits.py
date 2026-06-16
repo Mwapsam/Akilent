@@ -66,6 +66,19 @@ class LimitChecker:
                 "automation_rules",
             )
 
+    def check_mailbox(self):
+        plan = self._require_active_plan()
+        if plan.max_mailboxes == -1:
+            return
+        from apps.email.models import Mailbox
+        count = Mailbox.objects.filter(account=self.account).count()
+        if count >= plan.max_mailboxes:
+            raise PlanLimitExceeded(
+                f"Mailbox limit of {plan.max_mailboxes} reached. "
+                "Upgrade your plan to add more mailboxes.",
+                "mailboxes",
+            )
+
     def check_email(self):
         plan = self._require_active_plan()
         if plan.max_emails_per_month == -1:

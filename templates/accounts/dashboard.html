@@ -13,7 +13,7 @@
       <div class="flex items-center justify-between gap-4">
         <div>
           <p class="text-sm font-medium text-blue-800">Finish setting up your workspace</p>
-          <p class="text-xs text-blue-600 mt-0.5">{{ onboarding_done }} of {{ onboarding_total }} steps complete — connect WhatsApp &amp; email to start sending.</p>
+          <p class="text-xs text-blue-600 mt-0.5">{{ onboarding_done }} of {{ onboarding_total }} steps complete — set up email to start sending.</p>
         </div>
         <span class="text-sm font-medium text-blue-700 shrink-0">Continue →</span>
       </div>
@@ -34,6 +34,7 @@
 
   <div class="grid sm:grid-cols-2 gap-4">
 
+    {% if WHATSAPP_ENABLED %}
     <!-- WhatsApp -->
     <div class="bg-white border border-gray-200 rounded-2xl p-6">
       <div class="flex items-center justify-between">
@@ -49,6 +50,7 @@
         {% endfor %}
       </ul>
     </div>
+    {% endif %}
 
     <!-- Email -->
     <div class="bg-white border border-gray-200 rounded-2xl p-6">
@@ -66,6 +68,16 @@
       </ul>
     </div>
 
+    <!-- Mailboxes -->
+    <div class="bg-white border border-gray-200 rounded-2xl p-6">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">Mailboxes</h2>
+        <a href="/email/mailboxes/" class="text-sm text-blue-600">Manage</a>
+      </div>
+      <p class="text-sm text-gray-400 mt-3">Create mailboxes &amp; aliases on your verified domains.</p>
+    </div>
+
+    {% if BITRIX_ENABLED %}
     <!-- Bitrix addon -->
     <div class="bg-white border border-gray-200 rounded-2xl p-6">
       <h2 class="font-semibold">Bitrix24 <span class="text-xs text-gray-400">(addon)</span></h2>
@@ -76,6 +88,7 @@
         <a href="/auth/bitrix/connect/" class="inline-block mt-3 text-sm text-blue-600">Connect Bitrix24</a>
       {% endif %}
     </div>
+    {% endif %}
 
   </div>
 {% endif %}

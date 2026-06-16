@@ -62,6 +62,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.accounts.context_processors.feature_flags",
             ],
         },
     },
@@ -132,6 +133,14 @@ if not FIELD_ENCRYPTION_KEY:
     )
 FIELD_ENCRYPTION_KEYS = [FIELD_ENCRYPTION_KEY]
 
+# --- Feature flags ---
+# Soft-disable the non-email verticals. Apps stay in INSTALLED_APPS (so models,
+# migrations and signals remain intact); these flags gate their URLs, nav,
+# Celery schedule and startup secret validation. Flip to True to re-enable.
+
+WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "False").lower() == "true"
+BITRIX_ENABLED = os.getenv("BITRIX_ENABLED", "False").lower() == "true"
+
 # --- WhatsApp ---
 
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
@@ -143,7 +152,7 @@ WHATSAPP_APP_ID = os.getenv("WHATSAPP_APP_ID", "")
 WHATSAPP_CONFIG_ID = os.getenv("WHATSAPP_CONFIG_ID", "")
 WHATSAPP_GRAPH_VERSION = os.getenv("WHATSAPP_GRAPH_VERSION", "v21.0")
 
-if not DEBUG:
+if not DEBUG and WHATSAPP_ENABLED:
     if not WHATSAPP_VERIFY_TOKEN:
         raise ValueError("WHATSAPP_VERIFY_TOKEN is missing")
     if not WHATSAPP_APP_SECRET:
@@ -164,7 +173,7 @@ BITRIX24_OAUTH_REDIRECT_URL = os.getenv(
     f"https://{BASE_DOMAIN}/auth/bitrix/callback/",
 )
 
-if not DEBUG:
+if not DEBUG and BITRIX_ENABLED:
     if not BITRIX_CLIENT_ID:
         raise ValueError(
             "BITRIX_CLIENT_ID missing"
@@ -175,13 +184,15 @@ if not DEBUG:
             "BITRIX_CLIENT_SECRET missing"
         )
 
-# --- Email (Mailcow) ---
+# --- Email (iRedMail) ---
 
-# Mailcow admin API, used to provision per-tenant sending domains + DKIM.
-MAILCOW_API_BASE = os.getenv("MAILCOW_API_BASE", "")
-MAILCOW_API_KEY = os.getenv("MAILCOW_API_KEY", "")
+# iredmail-api REST service, used to provision per-tenant sending domains,
+# DKIM, mailboxes and aliases. Auth: admin login -> JWT (cached).
+IREDMAIL_API_BASE = os.getenv("IREDMAIL_API_BASE", "")
+IREDMAIL_ADMIN_USER = os.getenv("IREDMAIL_ADMIN_USER", "")
+IREDMAIL_ADMIN_PASSWORD = os.getenv("IREDMAIL_ADMIN_PASSWORD", "")
 
-# SMTP relay credentials (the Mailcow host) used to actually send mail.
+# SMTP relay credentials (the iRedMail host) used to actually send mail.
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
@@ -205,35 +216,46 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
+# Email + billing always run; the WhatsApp/Bitrix routes and schedules are only
+# registered when their feature flag is on (see "Feature flags" above).
 CELERY_TASK_ROUTES = {
-    "apps.whatsapp.tasks.process_whatsapp_event": {"queue": "whatsapp"},
-    "apps.bitrix.tasks.process_bitrix_webhook": {"queue": "bitrix"},
-    "apps.whatsapp.tasks.drain_outbound_queue": {"queue": "outbound"},
     "apps.email.tasks.send_email": {"queue": "email"},
+    "apps.email.tasks.provision_mailbox": {"queue": "email"},
 }
 
 CELERY_BEAT_SCHEDULE = {
-    "refresh-bitrix-tokens": {
-        "task": "apps.bitrix.tasks.refresh_tokens",
-        "schedule": 300.0,
-    },
-    "close-expired-conversations": {
-        "task": "apps.whatsapp.tasks.close_expired_conversations",
-        "schedule": 3600.0,
-    },
-    "drain-outbound-queue": {
-        "task": "apps.whatsapp.tasks.drain_outbound_queue",
-        "schedule": 10.0,
-    },
-    "download-media": {
-        "task": "apps.whatsapp.tasks.download_media",
-        "schedule": 60.0,
-    },
     "expire-trials": {
         "task": "apps.billing.tasks.expire_trials",
         "schedule": 3600.0,
     },
 }
+
+if WHATSAPP_ENABLED:
+    CELERY_TASK_ROUTES.update({
+        "apps.whatsapp.tasks.process_whatsapp_event": {"queue": "whatsapp"},
+        "apps.whatsapp.tasks.drain_outbound_queue": {"queue": "outbound"},
+    })
+    CELERY_BEAT_SCHEDULE.update({
+        "close-expired-conversations": {
+            "task": "apps.whatsapp.tasks.close_expired_conversations",
+            "schedule": 3600.0,
+        },
+        "drain-outbound-queue": {
+            "task": "apps.whatsapp.tasks.drain_outbound_queue",
+            "schedule": 10.0,
+        },
+        "download-media": {
+            "task": "apps.whatsapp.tasks.download_media",
+            "schedule": 60.0,
+        },
+    })
+
+if BITRIX_ENABLED:
+    CELERY_TASK_ROUTES["apps.bitrix.tasks.process_bitrix_webhook"] = {"queue": "bitrix"}
+    CELERY_BEAT_SCHEDULE["refresh-bitrix-tokens"] = {
+        "task": "apps.bitrix.tasks.refresh_tokens",
+        "schedule": 300.0,
+    }
 
 # --- Logging ---
 

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Mailboxes — Automator{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Mailboxes &amp; aliases</h1>
+  <a href="/email/domains/" class="text-sm text-blue-600 hover:text-blue-700">← Domains</a>
+</div>
+
+{% if is_admin %}
+<div class="bg-purple-50 border border-purple-200 text-purple-700 rounded-2xl px-5 py-3 mb-6 text-sm">
+  Admin view — showing all tenants' mailboxes &amp; aliases with full access.
+</div>
+{% endif %}
+
+{% if not domains %}
+  <div class="bg-amber-50 border border-amber-200 text-amber-700 rounded-2xl p-6 mb-6 text-sm">
+    Add and verify a sending domain first, then you can create mailboxes on it.
+  </div>
+{% endif %}
+
+<!-- Create mailbox -->
+<div class="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+  <h2 class="font-semibold mb-4">Create a mailbox</h2>
+  <form method="post" action="/email/mailboxes/create/" class="grid sm:grid-cols-2 gap-3">
+    {% csrf_token %}
+    <input name="email" placeholder="user@yourdomain.com" required
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input name="name" placeholder="Display name (optional)"
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input name="password" type="password" placeholder="Password" required
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input name="quota_mb" type="number" min="0" value="1024" placeholder="Quota (MB)"
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <div class="sm:col-span-2">
+      <button class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl">Create mailbox</button>
+    </div>
+  </form>
+</div>
+
+<!-- Mailboxes -->
+<div class="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-6">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-gray-500 text-left">
+      <tr>
+        <th class="px-4 py-3 font-medium">Mailbox</th>
+        <th class="px-4 py-3 font-medium">Quota (MB)</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+        <th class="px-4 py-3 font-medium text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for mb in mailboxes %}
+        <tr>
+          <td class="px-4 py-3">
+            <div class="font-medium">{{ mb.email }}</div>
+            {% if mb.name %}<div class="text-xs text-gray-400">{{ mb.name }}</div>{% endif %}
+            {% if is_admin %}<div class="text-xs text-purple-500">{{ mb.account.company_name }}</div>{% endif %}
+            {% if mb.status == 'failed' and mb.error %}<div class="text-xs text-red-500 mt-1">{{ mb.error|truncatechars:80 }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <form method="post" action="/email/mailboxes/{{ mb.pk }}/quota/" class="flex items-center gap-2">
+              {% csrf_token %}
+              <input name="quota_mb" type="number" min="0" value="{{ mb.quota_mb }}"
+                     class="w-24 border border-gray-300 rounded-lg px-2 py-1 text-xs">
+              <button class="text-xs text-blue-600">Save</button>
+            </form>
+          </td>
+          <td class="px-4 py-3">
+            <span class="capitalize
+              {% if mb.status == 'active' %}text-green-600{% elif mb.status == 'failed' %}text-red-600{% else %}text-amber-600{% endif %}">
+              {{ mb.status }}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center justify-end gap-3">
+              <form method="post" action="/email/mailboxes/{{ mb.pk }}/password/" class="flex items-center gap-1">
+                {% csrf_token %}
+                <input name="password" type="password" placeholder="New password"
+                       class="w-32 border border-gray-300 rounded-lg px-2 py-1 text-xs">
+                <button class="text-xs text-blue-600">Reset</button>
+              </form>
+              <form method="post" action="/email/mailboxes/{{ mb.pk }}/delete/"
+                    onsubmit="return confirm('Delete {{ mb.email }}?');">
+                {% csrf_token %}
+                <button class="text-xs text-red-600">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-400">No mailboxes yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Create alias -->
+<div class="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+  <h2 class="font-semibold mb-4">Create an alias</h2>
+  <form method="post" action="/email/aliases/create/" class="grid sm:grid-cols-2 gap-3">
+    {% csrf_token %}
+    <input name="address" placeholder="sales@yourdomain.com" required
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input name="goto" placeholder="forwards-to@yourdomain.com" required
+           class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <div class="sm:col-span-2">
+      <button class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl">Create alias</button>
+    </div>
+  </form>
+</div>
+
+<!-- Aliases -->
+<div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-gray-500 text-left">
+      <tr>
+        <th class="px-4 py-3 font-medium">Alias</th>
+        <th class="px-4 py-3 font-medium">Forwards to</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for a in aliases %}
+        <tr>
+          <td class="px-4 py-3">{{ a.address }}</td>
+          <td class="px-4 py-3 text-gray-500">{{ a.goto }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="2" class="px-4 py-6 text-center text-gray-400">No aliases yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

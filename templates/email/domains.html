@@ -2,9 +2,19 @@
 {% block title %}Email domains — Automator{% endblock %}
 {% block content %}
 
-<h1 class="text-2xl font-semibold mb-6">Transactional email</h1>
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Transactional email</h1>
+  <a href="/email/mailboxes/" class="text-sm text-blue-600 hover:text-blue-700">Mailboxes &amp; aliases →</a>
+</div>
+
+{% if is_admin %}
+<div class="bg-purple-50 border border-purple-200 text-purple-700 rounded-2xl px-5 py-3 mb-6 text-sm">
+  Admin view — showing all tenants' domains with full access.
+</div>
+{% endif %}
 
 <!-- API key -->
+{% if account %}
 <div class="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
   <div class="flex items-center justify-between">
     <h2 class="font-semibold">API key</h2>
@@ -20,12 +30,22 @@
     <p class="text-sm text-gray-400 mt-3">No API key yet — generate one to start sending.</p>
   {% endif %}
 </div>
+{% endif %}
 
 <!-- Add domain -->
 <div class="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
   <h2 class="font-semibold mb-4">Add a sending domain</h2>
-  <form method="post" action="/email/domains/create/" class="flex gap-3">
+  <form method="post" action="/email/domains/create/" class="flex flex-wrap gap-3">
     {% csrf_token %}
+    {% if is_admin %}
+      <select name="account_id" required
+              class="border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Account…</option>
+        {% for a in accounts %}
+          <option value="{{ a.pk }}">{{ a.company_name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
     <input name="domain" placeholder="mail.yourcompany.com" required
            class="flex-1 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
     <button class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl">Provision</button>
@@ -38,18 +58,33 @@
     <div class="bg-white border border-gray-200 rounded-2xl p-6">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="font-semibold">{{ d.domain }}</h3>
+          <h3 class="font-semibold">
+            {{ d.domain }}
+            {% if not d.is_active %}<span class="ml-2 text-xs font-normal text-gray-400">(disabled)</span>{% endif %}
+          </h3>
+          {% if is_admin %}<p class="text-xs text-gray-400">{{ d.account.company_name }}</p>{% endif %}
           <p class="text-xs mt-1
             {% if d.status == 'verified' %}text-green-600{% elif d.status == 'failed' %}text-red-600{% else %}text-amber-600{% endif %}">
             {{ d.get_status_display }}
           </p>
         </div>
-        {% if not d.is_verified %}
-          <form method="post" action="/email/domains/{{ d.pk }}/verify/">
+        <div class="flex items-center gap-4">
+          {% if not d.is_verified %}
+            <form method="post" action="/email/domains/{{ d.pk }}/verify/">
+              {% csrf_token %}
+              <button class="text-sm text-blue-600">Verify</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/email/domains/{{ d.pk }}/toggle/">
             {% csrf_token %}
-            <button class="text-sm text-blue-600">Verify</button>
+            <button class="text-sm text-gray-600 hover:text-gray-900">{% if d.is_active %}Disable{% else %}Enable{% endif %}</button>
           </form>
-        {% endif %}
+          <form method="post" action="/email/domains/{{ d.pk }}/delete/"
+                onsubmit="return confirm('Delete {{ d.domain }} and all its mailboxes &amp; aliases?');">
+            {% csrf_token %}
+            <button class="text-sm text-red-600 hover:text-red-700">Delete</button>
+          </form>
+        </div>
       </div>
 
       <div class="mt-4 text-xs space-y-3">
@@ -59,7 +94,7 @@
         </div>
         <div>
           <p class="text-gray-500">SPF — TXT record at <code>{{ d.domain }}</code></p>
-          <p class="font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mt-1">v=spf1 include:YOUR_MAILCOW_HOST ~all</p>
+          <p class="font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mt-1">v=spf1 include:YOUR_MAIL_HOST ~all</p>
         </div>
         <div>
           <p class="text-gray-500">DMARC — TXT record at <code>{{ d.dmarc_record_name }}</code></p>
