@@ -30,7 +30,10 @@
           {% if form.username.errors %}<p class="field-error">{{ form.username.errors|join:" " }}</p>{% endif %}
         </div>
         <div>
-          <label for="id_password" class="label">Password</label>
+          <div class="flex items-center justify-between">
+            <label for="id_password" class="label">Password</label>
+            <a href="{% url 'password_reset' %}" class="text-xs text-brand-600 hover:text-brand-700">Forgot password?</a>
+          </div>
           <input id="id_password" type="password" name="password" autocomplete="current-password"
                  class="input{% if form.password.errors %} input-error{% endif %}">
           {% if form.password.errors %}<p class="field-error">{{ form.password.errors|join:" " }}</p>{% endif %}

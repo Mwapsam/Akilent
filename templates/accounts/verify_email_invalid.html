@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Link invalid — {{ site.app_name|default:"Automator" }}{% endblock %}
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="inline-flex mb-4">
+        {% include "components/brand_mark.html" with class="w-12 h-12" %}
+      </div>
+      <h1 class="text-xl font-semibold text-gray-900">Link invalid or expired</h1>
+    </div>
+
+    <div class="card card-pad sm:!p-8">
+      <div class="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+        {% include "components/icon.html" with name="alert" class="w-4 h-4 text-red-500 shrink-0 mt-0.5" %}
+        <p class="text-sm text-red-700">
+          This confirmation link is invalid or has already been used. Try signing
+          up again, or sign in if you've already confirmed.
+        </p>
+      </div>
+      <a href="{% url 'signup' %}" class="btn btn-primary btn-block mt-4">Back to sign up</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -18,10 +18,22 @@ dependencies = [
     "requests (>=2.31,<3.0)",
     "b24pysdk[django] (>=1.1.4,<2.0.0)",
     "whitenoise (>=6.12.0,<7.0.0)",
-    "pillow (>=12.2.0,<13.0.0)"
+    "pillow (>=12.2.0,<13.0.0)",
+    "gunicorn (>=23.0,<24.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=8.0,<9.0)",
+    "pytest-django (>=4.8,<5.0)"
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "automator.settings_test"
+python_files = ["test_*.py", "tests.py", "*_test.py"]
+addopts = "-q"

@@ -7,6 +7,34 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("auth/login/", auth_views.LoginView.as_view(template_name="auth/login.html"), name="login"),
     path("auth/logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path(
+        "auth/password-reset/",
+        auth_views.PasswordResetView.as_view(
+            template_name="auth/password_reset.html",
+            email_template_name="auth/password_reset_email.txt",
+            subject_template_name="auth/password_reset_subject.txt",
+            success_url="/auth/password-reset/done/",
+        ),
+        name="password_reset",
+    ),
+    path(
+        "auth/password-reset/done/",
+        auth_views.PasswordResetDoneView.as_view(template_name="auth/password_reset_done.html"),
+        name="password_reset_done",
+    ),
+    path(
+        "auth/reset/<uidb64>/<token>/",
+        auth_views.PasswordResetConfirmView.as_view(
+            template_name="auth/password_reset_confirm.html",
+            success_url="/auth/reset/done/",
+        ),
+        name="password_reset_confirm",
+    ),
+    path(
+        "auth/reset/done/",
+        auth_views.PasswordResetCompleteView.as_view(template_name="auth/password_reset_complete.html"),
+        name="password_reset_complete",
+    ),
     path("", include("apps.accounts.urls")),
     path("email/", include("apps.email.urls")),
     path("billing/", include("apps.billing.urls", namespace="billing")),

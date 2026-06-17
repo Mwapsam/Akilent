@@ -2,8 +2,15 @@ import logging
 
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from apps.accounts.forms import SignupForm
 from apps.accounts.models import Account, Membership
@@ -12,10 +19,36 @@ from apps.accounts.utils import get_current_account, set_current_account
 logger = logging.getLogger(__name__)
 
 
+def _send_verification_email(request, user):
+    """Email the user a tokened link to activate their account."""
+    from apps.core.models import SiteSettings
+    from django.conf import settings
+
+    site_name = SiteSettings.load().app_name or "Automator"
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    path = reverse("verify_email", kwargs={"uidb64": uid, "token": token})
+    link = request.build_absolute_uri(path)
+
+    ctx = {"user": user, "site_name": site_name, "link": link}
+    subject = render_to_string("accounts/verify_email_subject.txt", ctx).strip()
+    body = render_to_string("accounts/verify_email.txt", ctx)
+    send_mail(
+        subject,
+        body,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+    )
+
+
 def signup(request):
     """Self-service signup: create a User, an Account, and an owner Membership.
 
-    The trial Subscription is created by the billing post_save signal on Account.
+    The user is created inactive and must confirm their email before they can
+    sign in (Django's auth backend refuses inactive users, which gates all
+    provisioning and sending). The trial Subscription is created by the billing
+    post_save signal on Account.
     """
     if request.user.is_authenticated:
         return redirect("dashboard")
@@ -32,6 +65,7 @@ def signup(request):
             with transaction.atomic():
                 user = form.save(commit=False)
                 user.email = form.cleaned_data["email"]
+                user.is_active = False
                 user.save()
 
                 account = Account.objects.create(
@@ -41,14 +75,43 @@ def signup(request):
                     user=user, account=account, role=Membership.Role.OWNER
                 )
 
-            login(request, user)
-            set_current_account(request, account)
-            logger.info("signup: created account %s for user %s", account.pk, user.pk)
-            return redirect("onboarding")
+            _send_verification_email(request, user)
+            logger.info(
+                "signup: created inactive account %s for user %s", account.pk, user.pk
+            )
+            return render(request, "accounts/verify_email_sent.html", {"email": user.email})
     else:
         form = SignupForm()
 
     return render(request, "accounts/signup.html", {"form": form})
+
+
+def verify_email(request, uidb64, token):
+    """Activate a user from a signup verification link and sign them in."""
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    if user is not None and user.is_active:
+        # Already verified — send them to sign in rather than error.
+        return redirect("login")
+
+    if user is not None and default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        login(request, user)
+        membership = Membership.objects.filter(user=user).select_related("account").first()
+        if membership is not None:
+            set_current_account(request, membership.account)
+        logger.info("verify_email: activated user %s", user.pk)
+        return redirect("onboarding")
+
+    return render(request, "accounts/verify_email_invalid.html", status=400)
 
 
 def landing(request):

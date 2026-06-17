@@ -1,3 +1,9 @@
+automator is a multi-tenant email-automation SaaS (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI). The core product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp and Bitrix verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
+
+Goal of this work: close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp/Bitrix stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
+
+
+
 **FIELD_ENCRYPTION_KEY** ***set or the app will raise an error on startup. Generate one with:***    
     `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 

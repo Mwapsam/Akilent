@@ -105,6 +105,21 @@ class Subscription(models.Model):
         return self.status == self.TRIALING
 
 
+class ProcessedWebhookEvent(models.Model):
+    """De-dupe ledger for inbound payment webhooks.
+
+    A replayed Flutterwave event (same event type + provider object id) must not
+    re-activate or re-extend a subscription. The unique ``event_key`` makes
+    processing idempotent: if the row already exists, the event was handled.
+    """
+
+    event_key = models.CharField(max_length=255, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.event_key
+
+
 class UsageSummary(models.Model):
     account = models.ForeignKey(
         "accounts.Account",

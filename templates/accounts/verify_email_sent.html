@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Confirm your email — {{ site.app_name|default:"Automator" }}{% endblock %}
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="inline-flex mb-4">
+        {% include "components/brand_mark.html" with class="w-12 h-12" %}
+      </div>
+      <h1 class="text-xl font-semibold text-gray-900">Confirm your email</h1>
+    </div>
+
+    <div class="card card-pad sm:!p-8 text-center">
+      <p class="text-sm text-gray-600">
+        We've sent a confirmation link to
+        <span class="font-medium text-gray-900">{{ email }}</span>.
+        Click it to activate your account and sign in. It may take a few minutes
+        to arrive — be sure to check your spam folder.
+      </p>
+    </div>
+
+    <p class="text-center text-xs text-gray-400 mt-6">
+      <a href="{% url 'login' %}" class="text-brand-600 hover:text-brand-700">Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

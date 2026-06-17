@@ -13,10 +13,20 @@ from django.views.decorators.http import require_POST
 from django.conf import settings
 
 from apps.accounts.utils import get_current_account
-from .models import Plan, Subscription, UsageSummary
+from .models import Plan, ProcessedWebhookEvent, Subscription, UsageSummary
 from .flutterwave import FlutterwaveError, get_fw_client
 
 logger = logging.getLogger(__name__)
+
+
+def _amount_covers_plan(amount, plan) -> bool:
+    """True if a charged amount is at least the plan's monthly price."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        return Decimal(str(amount)) >= plan.price_monthly
+    except (InvalidOperation, TypeError):
+        return False
 
 
 @login_required
@@ -232,6 +242,16 @@ def callback(request):
         messages.error(request, "Subscription activation failed. Contact support.")
         return redirect("/dashboard/")
 
+    # Trust the verified transaction, not the redirect: confirm the amount
+    # actually charged covers the plan we're about to grant.
+    if not _amount_covers_plan(transaction.get("amount"), plan):
+        logger.error(
+            "callback: amount mismatch account=%s plan=%s charged=%s expected=%s",
+            account.pk, plan.slug, transaction.get("amount"), plan.price_monthly,
+        )
+        messages.error(request, "Payment amount did not match the plan. Contact support if charged.")
+        return redirect("/billing/plans/")
+
     now = timezone.now()
     cust_email = (transaction.get("customer") or {}).get("email")
     Subscription.objects.update_or_create(
@@ -276,6 +296,19 @@ def cancel_subscription(request):
     account = get_current_account(request)
     if account is None:
         return redirect("/dashboard/")
+
+    # Only an owner/admin of the account may cancel its billing.
+    from apps.accounts.models import Membership
+
+    is_privileged = request.user.is_superuser or Membership.objects.filter(
+        user=request.user,
+        account=account,
+        role__in=[Membership.Role.OWNER, Membership.Role.ADMIN],
+    ).exists()
+    if not is_privileged:
+        messages.error(request, "Only an account owner or admin can cancel the subscription.")
+        return redirect("/billing/plans/")
+
     sub = getattr(account, "subscription", None)
     if not sub or not sub.is_active:
         messages.error(request, "No active subscription to cancel.")
@@ -337,6 +370,17 @@ def webhook(request):
         return HttpResponse(status=400)
 
     event = payload.get("event")
+    data = payload.get("data", {}) or {}
+
+    # Idempotency: ignore replays of an event we've already processed. The key is
+    # the event type plus the provider object id (transaction/subscription id).
+    object_id = data.get("id")
+    if object_id is not None:
+        event_key = f"{event}:{object_id}"
+        _, created = ProcessedWebhookEvent.objects.get_or_create(event_key=event_key)
+        if not created:
+            logger.info("webhook: duplicate event ignored key=%s", event_key)
+            return HttpResponse(status=200)
 
     if event == "charge.completed":
         _handle_charge_completed(payload)
@@ -369,12 +413,37 @@ def _handle_charge_completed(payload: dict):
         logger.warning("_handle_charge_completed: no subscription for account=%s", account_id)
         return
 
+    # Resolve the plan we're being asked to grant (fall back to the current one).
+    plan = sub.plan
+    if plan_slug:
+        plan = Plan.objects.filter(slug=plan_slug).first() or plan
+
+    # Don't trust the webhook body alone — independently verify the transaction
+    # with Flutterwave and confirm the charged amount covers the plan.
+    transaction_id = data.get("id")
+    try:
+        verified = get_fw_client().verify_transaction(transaction_id)
+    except FlutterwaveError as exc:
+        logger.error("_handle_charge_completed: verify failed tx=%s: %s", transaction_id, exc)
+        return
+
+    if verified.get("status") != "successful" or not _amount_covers_plan(verified.get("amount"), plan):
+        logger.error(
+            "_handle_charge_completed: rejected account=%s plan=%s status=%s amount=%s expected=%s",
+            account_id, plan.slug, verified.get("status"), verified.get("amount"), plan.price_monthly,
+        )
+        return
+
     now = timezone.now()
+    sub.plan = plan
     sub.status = Subscription.ACTIVE
     sub.current_period_start = now
     sub.current_period_end = now + timedelta(days=30)
-    sub.fw_customer_email = (data.get("customer") or {}).get("email") or sub.fw_customer_email
-    sub.save(update_fields=["status", "current_period_start", "current_period_end", "fw_customer_email", "updated_at"])
+    sub.fw_customer_email = (verified.get("customer") or {}).get("email") or sub.fw_customer_email
+    sub.save(update_fields=[
+        "plan", "status", "current_period_start", "current_period_end",
+        "fw_customer_email", "updated_at",
+    ])
 
     logger.info("_handle_charge_completed: renewed subscription for account=%s", account_id)
 
