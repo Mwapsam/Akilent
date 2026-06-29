@@ -72,21 +72,21 @@
       <div class="overflow-x-auto">
         <table class="table">
           <thead><tr>
-            <th>Time</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Status</th><th>DSN</th>
+            <th>Time</th><th>Sender</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Error</th>
           </tr></thead>
           <tbody>
             {% for row in logs %}
               <tr>
-                <td class="text-gray-400 whitespace-nowrap">{{ row.time_iso|default:"—" }}</td>
-                <td>{{ row.sender|default:"—" }}</td>
-                <td>{{ row.recip_addr|default:"—" }}</td>
+                <td class="text-gray-400 whitespace-nowrap">{{ row.sent_at|default:row.created_at|default:"—" }}</td>
+                <td>{{ row.from_email|default:"—" }}</td>
+                <td>{{ row.to_email|default:"—" }}</td>
                 <td class="text-gray-500">{{ row.subject|default:"—"|truncatechars:40 }}</td>
                 <td>
-                  {% if row.rs == 'D' %}<span class="badge badge-success">Delivered</span>
-                  {% elif row.rs %}<span class="badge badge-warning">{{ row.rs }}</span>
-                  {% else %}<span class="badge badge-neutral">—</span>{% endif %}
+                  {% if row.status == 'sent' %}<span class="badge badge-success">Delivered</span>
+                  {% elif row.status == 'failed' %}<span class="badge badge-warning">Failed</span>
+                  {% else %}<span class="badge badge-neutral">{{ row.get_status_display }}</span>{% endif %}
                 </td>
-                <td class="text-gray-400">{{ row.dsn|default:"—" }}</td>
+                <td class="text-gray-400">{{ row.error|default:"—"|truncatechars:60 }}</td>
               </tr>
             {% endfor %}
           </tbody>

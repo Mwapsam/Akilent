@@ -132,11 +132,13 @@ def test_verify_view_stays_pending_without_ownership(client, account, domain, mo
 def test_create_view_mints_verification_token(client, account, monkeypatch):
     client.force_login(account.owner)
 
-    class FakeIRed:
-        def provision_sending_domain(self, domain, selector="dkim"):
-            return {"dkim_txt": DKIM_PUBLIC, "selector": selector}
+    from apps.email.providers.base import ProvisionResult, DkimResult
 
-    monkeypatch.setattr("apps.email.views.IRedMailClient", lambda: FakeIRed())
+    class FakeProvider:
+        def provision_domain(self, domain, selector="dkim"):
+            return ProvisionResult(dkim=DkimResult(selector=selector, dkim_txt=DKIM_PUBLIC))
+
+    monkeypatch.setattr("apps.email.views.get_mail_provider", lambda: FakeProvider())
     resp = client.post("/email/domains/create/", {"domain": "new.acme.com"})
     assert resp.status_code == 302
     d = EmailDomain.objects.get(domain="new.acme.com")

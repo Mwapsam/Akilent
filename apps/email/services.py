@@ -1,7 +1,14 @@
-"""Transactional email sending via the iRedMail SMTP relay."""
+"""Transactional email sending and self-hosted open/click tracking.
+
+Tracking is fully Django-native — no external API call. Each outgoing link is
+rewritten to a Django redirect endpoint; an open-pixel is injected before
+</body>. Both resolve through EmailTrackingToken rows, which are minted here
+and consumed by the tracking views (apps.email.views.tracking_open / click).
+"""
 
 import logging
 import re
+import secrets
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
@@ -12,46 +19,59 @@ _HREF_RE = re.compile(r'href="(https?://[^"]+)"', re.IGNORECASE)
 _MAX_TRACKED_LINKS = 25
 
 
-def apply_tracking(html_body: str, message_id, recipient: str, domain: str) -> str:
-    """Inject an open-tracking pixel and rewrite links with click-tracking URLs.
+def _tracking_base() -> str:
+    base_domain = getattr(settings, "BASE_DOMAIN", "") or settings.ALLOWED_HOSTS[0]
+    scheme = "http" if settings.DEBUG else "https"
+    return f"{scheme}://{base_domain}"
 
-    Uses the iredmail-api ``/api/track/generate`` endpoint. Best-effort: returns
-    the original HTML unchanged on any failure so tracking never blocks delivery.
+
+def _mint_token(message, recipient: str, url: str = "") -> str:
+    from apps.email.models import EmailTrackingToken
+    token = secrets.token_urlsafe(32)
+    EmailTrackingToken.objects.create(
+        token=token,
+        message=message,
+        recipient=recipient,
+        url=url,
+    )
+    return token
+
+
+def apply_tracking(html_body: str, message, recipient: str, domain: str) -> str:
+    """Rewrite outgoing HTML to inject open-pixel and click-tracking URLs.
+
+    `message` must be an EmailMessage ORM instance (not a raw ID).
+    Best-effort: returns the original HTML unchanged on any failure so tracking
+    never blocks delivery.
     """
     if not html_body:
         return html_body
-    from apps.email.iredmail import IRedMailClient, IRedMailError
-
     try:
-        client = IRedMailClient()
-        base = client.generate_tracking(message_id, recipient, domain, f"https://{domain}")
-        open_pixel = (base or {}).get("open_pixel")
+        base = _tracking_base()
 
-        seen, count = {}, 0
+        open_token = _mint_token(message, recipient, url="")
+        open_url = f"{base}/email/t/open/{open_token}/"
 
-        def _rewrite(match):
+        seen: dict[str, str] = {}
+        count = 0
+
+        def _rewrite(match: re.Match) -> str:
             nonlocal count
             url = match.group(1)
             if count >= _MAX_TRACKED_LINKS:
                 return match.group(0)
             if url not in seen:
-                try:
-                    res = client.generate_tracking(message_id, recipient, domain, url)
-                    seen[url] = (res or {}).get("click_url") or url
-                    count += 1
-                except IRedMailError:
-                    seen[url] = url
+                click_token = _mint_token(message, recipient, url=url)
+                seen[url] = f"{base}/email/t/click/{click_token}/"
+                count += 1
             return f'href="{seen[url]}"'
 
         html = _HREF_RE.sub(_rewrite, html_body)
-        if open_pixel:
-            pixel = (f'<img src="{open_pixel}" width="1" height="1" alt="" '
-                     f'style="display:none">')
-            idx = html.lower().rfind("</body>")
-            html = html[:idx] + pixel + html[idx:] if idx != -1 else html + pixel
-        return html
-    except IRedMailError:
-        return html_body
+        pixel = (
+            f'<img src="{open_url}" width="1" height="1" alt="" style="display:none">'
+        )
+        idx = html.lower().rfind("</body>")
+        return html[:idx] + pixel + html[idx:] if idx != -1 else html + pixel
     except Exception:
         logger.exception("apply_tracking: unexpected error; sending untracked")
         return html_body
@@ -64,7 +84,7 @@ def smtp_send(
     text_body: str = "",
     html_body: str = "",
 ) -> str:
-    """Send one email through the configured Mailcow SMTP relay.
+    """Send one email through the configured SMTP relay (Stalwart submission port).
 
     Returns the local Message-ID. Raises on failure (caller logs/marks failed).
     """

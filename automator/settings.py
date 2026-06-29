@@ -206,19 +206,21 @@ if not DEBUG and BITRIX_ENABLED:
             "BITRIX_CLIENT_SECRET missing"
         )
 
-# --- Email (iRedMail) ---
+# --- Email (Stalwart Mail Server) ---
 
-# iredmail-api REST service, used to provision per-tenant sending domains,
-# DKIM, mailboxes and aliases. Auth: admin login -> JWT (cached).
-IREDMAIL_API_BASE = os.getenv("IREDMAIL_API_BASE", "")
-IREDMAIL_ADMIN_USER = os.getenv("IREDMAIL_ADMIN_USER", "")
-IREDMAIL_ADMIN_PASSWORD = os.getenv("IREDMAIL_ADMIN_PASSWORD", "")
+# Stalwart HTTP Management API — provisions per-tenant domains, DKIM,
+# mailboxes and aliases. Port 8080 is internal-only (not published to host).
+STALWART_API_BASE = os.getenv("STALWART_API_BASE", "")
+STALWART_ADMIN_USER = os.getenv("STALWART_ADMIN_USER", "")
+STALWART_ADMIN_PASSWORD = os.getenv("STALWART_ADMIN_PASSWORD", "")
 
-# Progstack domain-ownership verification API. The API token is per-account
-# (stored on Account.progstack_token); only the base URL is global.
-PROGSTACK_API_BASE = os.getenv("PROGSTACK_API_BASE", "https://api.progstack.org")
+# Provider selector — swap the implementation without touching business logic.
+MAIL_PROVIDER_BACKEND = os.getenv("MAIL_PROVIDER_BACKEND", "stalwart")
 
-# SMTP relay credentials (the iRedMail host) used to actually send mail.
+# Public domain used to build absolute tracking URLs in outgoing emails.
+BASE_DOMAIN = os.getenv("BASE_DOMAIN", (ALLOWED_HOSTS[0] if ALLOWED_HOSTS else "localhost"))
+
+# SMTP submission credentials (Stalwart port 587) used to actually send mail.
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
@@ -248,6 +250,7 @@ CELERY_TASK_ROUTES = {
     "apps.email.tasks.send_email": {"queue": "email"},
     "apps.email.tasks.provision_mailbox": {"queue": "email"},
     "apps.email.tasks.prune_email_logs": {"queue": "email"},
+    "apps.email.tasks.prune_tracking_tokens": {"queue": "email"},
 }
 
 CELERY_BEAT_SCHEDULE = {
@@ -255,9 +258,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.billing.tasks.expire_trials",
         "schedule": 3600.0,
     },
-    # Enforce per-plan log retention once a day.
     "prune-email-logs": {
         "task": "apps.email.tasks.prune_email_logs",
+        "schedule": 86400.0,
+    },
+    "prune-tracking-tokens": {
+        "task": "apps.email.tasks.prune_tracking_tokens",
         "schedule": 86400.0,
     },
 }

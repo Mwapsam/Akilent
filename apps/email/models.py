@@ -180,8 +180,8 @@ class Mailbox(models.Model):
     """A real mailbox provisioned on the iRedMail server for a tenant.
 
     Mailboxes are a billable unit sold per subscription package. The account's
-    password is never stored here — it is passed straight to iredmail-api at
-    provisioning time.
+    password is never stored here — it is passed to the mail provider at
+    provisioning time via the Celery task.
     """
 
     class Status(models.TextChoices):
@@ -285,3 +285,53 @@ class EmailMessage(models.Model):
 
     def __str__(self):
         return f"{self.to_email} [{self.status}]"
+
+
+class EmailTrackingToken(models.Model):
+    """Maps an opaque URL token to a (message, recipient, original_url) triple.
+
+    Django generates the token when rewriting outgoing email links. The token
+    is the only secret in the tracking URL — no internal DB IDs are exposed.
+    """
+
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    message = models.ForeignKey(
+        EmailMessage, on_delete=models.CASCADE, related_name="tracking_tokens"
+    )
+    recipient = models.EmailField()
+    url = models.TextField(blank=True, default="")  # blank = open-pixel token
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["created_at"])]
+
+    def __str__(self):
+        kind = "click" if self.url else "open"
+        return f"{kind} token for {self.message_id}"
+
+
+class EmailTrackingEvent(models.Model):
+    """An open or click event recorded when a recipient interacts with an email."""
+
+    class Kind(models.TextChoices):
+        OPEN = "open", "Open"
+        CLICK = "click", "Click"
+
+    message = models.ForeignKey(
+        EmailMessage, on_delete=models.CASCADE, related_name="tracking_events"
+    )
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    url = models.TextField(blank=True, default="")  # only set for click events
+    ip = models.GenericIPAddressField(blank=True, null=True)
+    ua = models.CharField(max_length=512, blank=True, default="")
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-occurred_at"]
+        indexes = [
+            models.Index(fields=["message", "kind"]),
+            models.Index(fields=["occurred_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} on message {self.message_id} at {self.occurred_at}"

@@ -17,4 +17,6 @@ urlpatterns = [
     path("mailboxes/<int:pk>/quota/", views.mailbox_quota, name="email-mailbox-quota"),
     path("aliases/create/", views.alias_create, name="email-alias-create"),
     path("send/", views.api_send, name="email-send"),
+    path("t/open/<str:token>/", views.tracking_open, name="email-tracking-open"),
+    path("t/click/<str:token>/", views.tracking_click, name="email-tracking-click"),
 ]
