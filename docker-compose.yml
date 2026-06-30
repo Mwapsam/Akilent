@@ -33,14 +33,24 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"          # no longer published to host directly; nginx fronts it
     env_file:
       - .env
     depends_on:
       - db
       - redis
       - rabbitmq
+
+  nginx:
+    image: nginx:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - web
 
   celery_worker:
     build: .
