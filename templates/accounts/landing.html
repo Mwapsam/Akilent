@@ -3,35 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Akilent — Digital Communications &amp; Automation Platform</title>
+  <title>Akilent — Communications infrastructure for business</title>
+  <meta name="description" content="Akilent connects WhatsApp Business messaging, transactional email, and automated workflows into a unified communications platform.">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root{
-      --ink:#0E1526;      /* Night Ops Navy */
+      /* Akilent dark chrome (Night Ops Navy scale) */
+      --ink:#0E1526;
       --ink-2:#161F35;
       --ink-3:#1C2640;
-      --surface:rgba(255,255,255,.025);
       --hairline:#26314A;
       --hairline-strong:rgba(255,255,255,.16);
       --text-hi:#FAFBFC;
       --text-mid:#A8B2C4;
       --text-lo:#838EA3;
-      --signal:#1FAF9C;   /* whatsapp channel — Transmit Teal */
+      /* Channel accents */
+      --signal:#1FAF9C;   /* whatsapp — Transmit Teal */
       --signal-ink:#12182B;
       --signal-glow:rgba(31,175,156,.35);
-      --mail:#FFB020;     /* email channel — Signal Amber */
+      --mail:#FFB020;     /* email — Signal Amber */
       --mail-glow:rgba(255,176,32,.28);
-      --rules:#5E8BD9;    /* automation channel — info blue */
+      --rules:#5E8BD9;    /* automation — info blue */
       --rules-glow:rgba(94,139,217,.28);
-      --radius-lg:20px;
-      --radius-md:16px;
+      /* Light bands (Paper system) */
+      --paper:#F3F5F7;
+      --paper-card:#FFFFFF;
+      --paper-border:#E8EDF3;
+      --paper-border-strong:#DCE1E8;
+      --paper-ink:#12182B;
+      --paper-mid:#46516B;
+      --paper-lo:#657089;
+      --radius-lg:16px;
+      --radius-md:12px;
       --ease:cubic-bezier(.16,1,.3,1);
     }
     *{ box-sizing:border-box; }
-    html{ scroll-behavior:smooth; }
+    html{ scroll-behavior:smooth; scroll-padding-top:4.5rem; }
     body{
       background:var(--ink);
       color:var(--text-hi);
@@ -45,34 +55,54 @@
     .text-lo{ color:var(--text-lo); }
     .bg-ink{ background:var(--ink); }
     .bg-ink-2{ background:var(--ink-2); }
-    .bg-ink-3{ background:var(--ink-3); }
     .border-hairline{ border-color:var(--hairline); }
     .text-signal{ color:var(--signal); }
     .text-mail{ color:var(--mail); }
     .text-rules{ color:var(--rules); }
-    .bg-signal{ background:var(--signal); }
 
     a, button, label, input{ transition:color .15s ease, background-color .15s ease, border-color .2s ease, transform .2s var(--ease), box-shadow .25s ease, opacity .2s ease; }
-
-    /* accessible focus states everywhere */
     a:focus-visible, button:focus-visible, label:focus-visible, input:focus-visible{
       outline:2px solid var(--signal);
       outline-offset:3px;
       border-radius:6px;
     }
-
     .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
-    /* ambient background glow, decorative only */
-    .ambient{ position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
-    .ambient span{ position:absolute; border-radius:999px; filter:blur(90px); opacity:.22; }
-    .ambient .g1{ width:520px; height:520px; top:-160px; left:-120px; background:var(--signal); animation:drift1 24s ease-in-out infinite; }
-    .ambient .g2{ width:460px; height:460px; top:-40px; right:-160px; background:var(--rules); animation:drift2 28s ease-in-out infinite; }
-    .ambient .g3{ width:380px; height:380px; bottom:-200px; left:35%; background:var(--mail); opacity:.14; animation:drift1 32s ease-in-out infinite reverse; }
-    @keyframes drift1{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(30px,25px); } }
-    @keyframes drift2{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(-25px,20px); } }
+    /* Buttons */
+    .cta-primary{
+      background:var(--mail);
+      color:#12182B;
+      font-weight:600;
+      border-radius:10px;
+    }
+    .cta-primary:hover{ background:#F5A312; transform:translateY(-1px); }
+    .cta-outline{
+      color:var(--text-hi);
+      border:1px solid var(--hairline);
+      border-radius:10px;
+    }
+    .cta-outline:hover{ border-color:var(--hairline-strong); background:rgba(255,255,255,.03); }
+    .cta-outline-light{
+      color:var(--paper-ink);
+      border:1px solid var(--paper-border-strong);
+      border-radius:10px;
+    }
+    .cta-outline-light:hover{ border-color:#A8B2C4; background:#FAFBFC; }
 
-    /* signature: live delivery console */
+    /* Ambient glows (hero only, decorative) */
+    .ambient{ position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+    .ambient span{ position:absolute; border-radius:999px; filter:blur(90px); opacity:.2; }
+    .ambient .g1{ width:520px; height:520px; top:-180px; left:-140px; background:var(--signal); animation:drift1 26s ease-in-out infinite; }
+    .ambient .g2{ width:420px; height:420px; top:-60px; right:-160px; background:var(--mail); opacity:.14; animation:drift2 30s ease-in-out infinite; }
+    @keyframes drift1{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(28px,22px); } }
+    @keyframes drift2{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(-22px,18px); } }
+    .pulse-ring{ animation:pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse{
+      0%, 100%{ box-shadow:0 0 0 0 rgba(31,175,156,.5); }
+      50%{ box-shadow:0 0 0 6px rgba(31,175,156,0); }
+    }
+
+    /* Product interface preview frame */
     .console{
       position:relative;
       background:linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
@@ -85,85 +115,123 @@
       position:absolute; inset:0;
       border-radius:inherit;
       padding:1px;
-      background:linear-gradient(160deg, rgba(31,175,156,.35), transparent 30%, transparent 70%, rgba(94,139,217,.25));
+      background:linear-gradient(160deg, rgba(31,175,156,.35), transparent 30%, transparent 70%, rgba(255,176,32,.2));
       -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite:xor;
       mask-composite:exclude;
       pointer-events:none;
     }
     .console-dot{ width:7px; height:7px; border-radius:999px; }
-    .console-row{
-      opacity:0;
-      transform:translateY(6px);
-      animation:rowIn .5s var(--ease) forwards;
-      background:var(--ink-3);
-      border:1px solid var(--hairline);
-      border-radius:14px;
-      transition:border-color .2s ease, background-color .2s ease;
-    }
-    .console-row:hover{ border-color:var(--hairline-strong); background:#1C2640; }
-    .console-row:nth-child(1){ animation-delay:.2s; }
-    .console-row:nth-child(2){ animation-delay:1.3s; }
-    .console-row:nth-child(3){ animation-delay:2.4s; }
-    .console-row:nth-child(4){ animation-delay:3.5s; }
-    @keyframes rowIn{ to{ opacity:1; transform:translateY(0); } }
 
-    .ticks{ display:inline-flex; align-items:center; gap:1px; }
-    .tick-state{ position:relative; width:16px; height:12px; }
-    .tick-state svg{ position:absolute; inset:0; opacity:0; animation:tickCycle 4.2s ease infinite; }
-    .tick-sent{ animation-delay:0s !important; }
-    .tick-delivered{ animation-delay:.5s !important; }
-    .tick-read{ animation-delay:1s !important; }
-    @keyframes tickCycle{
-      0%, 8%{ opacity:0; }
-      14%, 96%{ opacity:1; }
-      100%{ opacity:1; }
+    /* Dashboard mockup internals (light UI inside dark frame) */
+    .mock-shell{
+      background:var(--paper);
+      border-radius:12px;
+      overflow:hidden;
+      color:var(--paper-ink);
+      display:grid;
+      grid-template-columns:11.5rem 1fr;
+      min-height:20rem;
     }
-    .pulse-ring{ animation:pulse 2.4s ease-in-out infinite; }
-    @keyframes pulse{
-      0%, 100%{ box-shadow:0 0 0 0 rgba(31,175,156,.5); }
-      50%{ box-shadow:0 0 0 6px rgba(31,175,156,0); }
+    @media (max-width:640px){ .mock-shell{ grid-template-columns:1fr; } .mock-side{ display:none; } }
+    .mock-side{
+      background:#FFFFFF;
+      border-right:1px solid var(--paper-border);
+      padding:.9rem .6rem;
+    }
+    .mock-nav-item{
+      display:flex; align-items:center; gap:.5rem;
+      font-size:.72rem; font-weight:500; color:var(--paper-mid);
+      padding:.42rem .6rem; border-radius:8px;
+    }
+    .mock-nav-item.active{ background:#F0F4FA; color:#263E63; font-weight:600; }
+    .mock-nav-item .dot{ width:5px; height:5px; border-radius:999px; background:#A8B2C4; }
+    .mock-nav-item.active .dot{ background:var(--signal); }
+    .mock-card{
+      background:var(--paper-card);
+      border:1px solid var(--paper-border);
+      border-radius:10px;
+      padding:.85rem .95rem;
     }
 
-    /* feature / channel cards */
-    .channel-card{
-      position:relative;
-      background:linear-gradient(180deg, var(--surface), transparent);
-      background-color:var(--ink-2);
-      border:1px solid var(--hairline);
+    /* Channel product cards (light band) */
+    .product-card{
+      background:var(--paper-card);
+      border:1px solid var(--paper-border);
       border-radius:var(--radius-lg);
       transition:border-color .25s ease, transform .3s var(--ease), box-shadow .3s ease;
     }
-    .channel-card:hover{ transform:translateY(-4px); border-color:var(--hairline-strong); box-shadow:0 24px 60px -32px rgba(0,0,0,.6); }
-    .icon-badge{
-      width:44px; height:44px;
-      border-radius:12px;
-      display:flex; align-items:center; justify-content:center;
-      border:1px solid var(--hairline);
+    .product-card:hover{ transform:translateY(-3px); border-color:var(--paper-border-strong); box-shadow:0 20px 45px -28px rgba(14,21,38,.35); }
+    .product-card .rail{ height:3px; border-radius:3px 3px 0 0; }
+    .spec-item{
+      display:flex; align-items:center; gap:.55rem;
+      font-size:.83rem; color:var(--paper-mid);
+      padding:.45rem 0;
+      border-top:1px solid var(--paper-border);
     }
+    .spec-item:first-child{ border-top:none; }
 
-    /* pricing */
-    .plan-card{
-      position:relative;
+    /* Workflow diagram */
+    .flow-node{
       background:var(--ink-2);
       border:1px solid var(--hairline);
+      border-radius:12px;
+      padding:.8rem 1.4rem;
+      text-align:center;
+    }
+    .flow-node.core{
+      border-color:rgba(31,175,156,.45);
+      box-shadow:0 0 40px -12px var(--signal-glow);
+    }
+    .flow-line{ width:1px; height:2rem; background:linear-gradient(180deg, var(--signal), rgba(31,175,156,.15)); margin:0 auto; }
+    .flow-chip{
+      background:var(--ink-2);
+      border:1px solid var(--hairline);
+      border-radius:10px;
+      padding:.6rem .9rem;
+      font-size:.8rem;
+      display:flex; align-items:center; gap:.5rem;
+      justify-content:center;
+    }
+    .flow-chip .mark{ width:6px; height:6px; border-radius:999px; }
+
+    /* Code panel */
+    .code-panel{
+      background:#0B111F;
+      border:1px solid var(--hairline);
+      border-radius:var(--radius-lg);
+      overflow:hidden;
+    }
+    .code-panel pre{ margin:0; padding:1.25rem 1.4rem; overflow-x:auto; font-size:.82rem; line-height:1.7; }
+    .tok-k{ color:var(--text-lo); }
+    .tok-s{ color:var(--signal); }
+    .tok-a{ color:var(--mail); }
+    .tok-m{ color:var(--rules); }
+
+    /* Light bands */
+    .band-light{ background:var(--paper); color:var(--paper-ink); }
+    .band-light .muted{ color:var(--paper-mid); }
+
+    /* Pricing (light) */
+    .plan-card{
+      background:var(--paper-card);
+      border:1px solid var(--paper-border);
       border-radius:var(--radius-lg);
       transition:transform .3s var(--ease), border-color .25s ease, box-shadow .3s ease;
     }
-    .plan-card:hover{ transform:translateY(-4px); border-color:var(--hairline-strong); }
+    .plan-card:hover{ transform:translateY(-3px); border-color:var(--paper-border-strong); }
     .plan-card.featured{
       border-color:transparent;
       background:
-        linear-gradient(var(--ink-2), var(--ink-2)) padding-box,
-        linear-gradient(160deg, var(--signal), var(--rules)) border-box;
+        linear-gradient(var(--paper-card), var(--paper-card)) padding-box,
+        linear-gradient(160deg, var(--signal), var(--mail)) border-box;
       border:1px solid transparent;
-      box-shadow:0 35px 80px -35px rgba(31,175,156,.35);
+      box-shadow:0 30px 70px -35px rgba(14,21,38,.35);
     }
-    .plan-card.featured:hover{ transform:translateY(-6px); }
-    .spec-row{ border-top:1px solid var(--hairline); padding-top:.7rem; padding-bottom:.7rem; }
+    .spec-row{ border-top:1px solid var(--paper-border); padding-top:.7rem; padding-bottom:.7rem; }
     .spec-row:first-child{ border-top:none; padding-top:0; }
 
-    /* mobile menu accordion (no JS) */
+    /* Mobile menu accordion (no JS) */
     #mobile-panel{
       display:grid;
       grid-template-rows:0fr;
@@ -179,51 +247,63 @@
 
     @media (prefers-reduced-motion: reduce){
       html{ scroll-behavior:auto; }
-      .console-row, .tick-state svg, .pulse-ring, .ambient span{ animation:none !important; opacity:1 !important; }
-      .channel-card:hover, .plan-card:hover{ transform:none; }
+      .pulse-ring, .ambient span{ animation:none !important; opacity:1 !important; }
+      .product-card:hover, .plan-card:hover, .cta-primary:hover{ transform:none; }
     }
   </style>
 </head>
 <body class="bg-ink">
 
-  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:top-3 focus:left-3 focus:bg-signal focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-medium">Skip to content</a>
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:top-3 focus:left-3 focus:bg-[#FFB020] focus:text-[#12182B] focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-semibold">Skip to content</a>
 
-  <!-- Nav -->
-  <header class="border-b border-hairline sticky top-0 z-30 bg-ink/85 backdrop-blur-md">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5">
-        <span class="w-2 h-2 rounded-full bg-signal pulse-ring"></span>
+  <!-- 1 · Product navigation header -->
+  <header class="border-b border-hairline sticky top-0 z-30 bg-ink/90 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
+      <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5 shrink-0">
+        <span class="w-2 h-2 rounded-full bg-[#1FAF9C] pulse-ring"></span>
         Akilent
       </a>
-      <nav class="hidden sm:flex items-center gap-8 text-sm" aria-label="Primary">
-        <a href="#features" class="text-mid hover:text-white">Features</a>
+
+      <nav class="hidden lg:flex items-center gap-7 text-[13px] font-medium" aria-label="Primary">
+        <a href="#platform" class="text-mid hover:text-white">Platform</a>
+        <a href="#channels" class="text-mid hover:text-white">Channels</a>
+        <a href="#automations" class="text-mid hover:text-white">Automations</a>
+        <a href="#developers" class="text-mid hover:text-white">Developers</a>
         <a href="#pricing" class="text-mid hover:text-white">Pricing</a>
-        {% if user.is_authenticated %}
-          <a href="/dashboard/" class="bg-signal text-[#12182B] font-semibold px-4 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5">Go to dashboard</a>
-        {% else %}
-          <a href="/auth/login/" class="text-mid hover:text-white">Sign in</a>
-          <a href="/signup/" class="bg-signal text-[#12182B] font-semibold px-4 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5">Get started</a>
-        {% endif %}
+        <a href="{% url 'help' %}" class="text-mid hover:text-white">Documentation</a>
       </nav>
 
+      <div class="hidden lg:flex items-center gap-3 text-sm shrink-0">
+        {% if user.is_authenticated %}
+          <a href="/dashboard/" class="cta-primary px-4 py-2 text-sm">Open console</a>
+        {% else %}
+          <a href="/auth/login/" class="text-mid hover:text-white font-medium">Sign in</a>
+          <a href="/signup/" class="cta-primary px-4 py-2 text-sm">Create account</a>
+        {% endif %}
+      </div>
+
       <input type="checkbox" id="mobile-toggle" class="sr-only">
-      <label for="mobile-toggle" class="sm:hidden burger-box relative w-9 h-9 -mr-1.5 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu" aria-controls="mobile-panel">
+      <label for="mobile-toggle" class="lg:hidden burger-box relative w-9 h-9 -mr-1.5 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu" aria-controls="mobile-panel">
         <span class="burger-line l1 block w-5 h-[1.5px] bg-white"></span>
         <span class="burger-line l2 block w-5 h-[1.5px] bg-white"></span>
         <span class="burger-line l3 block w-5 h-[1.5px] bg-white"></span>
       </label>
     </div>
 
-    <nav id="mobile-panel" class="sm:hidden border-t border-hairline" aria-label="Mobile">
+    <nav id="mobile-panel" class="lg:hidden border-t border-hairline" aria-label="Mobile">
       <div>
         <div class="flex flex-col gap-1 px-6 py-5 text-sm">
-          <a href="#features" class="text-mid hover:text-white py-2.5">Features</a>
-          <a href="#pricing" class="text-mid hover:text-white py-2.5">Pricing</a>
+          <a href="#platform" class="text-mid hover:text-white py-2">Platform</a>
+          <a href="#channels" class="text-mid hover:text-white py-2">Channels</a>
+          <a href="#automations" class="text-mid hover:text-white py-2">Automations</a>
+          <a href="#developers" class="text-mid hover:text-white py-2">Developers</a>
+          <a href="#pricing" class="text-mid hover:text-white py-2">Pricing</a>
+          <a href="{% url 'help' %}" class="text-mid hover:text-white py-2">Documentation</a>
           {% if user.is_authenticated %}
-            <a href="/dashboard/" class="bg-signal text-[#12182B] font-semibold px-4 py-3 rounded-xl text-center mt-2">Go to dashboard</a>
+            <a href="/dashboard/" class="cta-primary px-4 py-3 text-center mt-2">Open console</a>
           {% else %}
-            <a href="/auth/login/" class="text-mid hover:text-white py-2.5">Sign in</a>
-            <a href="/signup/" class="bg-signal text-[#12182B] font-semibold px-4 py-3 rounded-xl text-center mt-2">Get started</a>
+            <a href="/auth/login/" class="text-mid hover:text-white py-2">Sign in</a>
+            <a href="/signup/" class="cta-primary px-4 py-3 text-center mt-2">Create account</a>
           {% endif %}
         </div>
       </div>
@@ -231,203 +311,316 @@
   </header>
 
   <main id="main">
-    <!-- Hero -->
+    <!-- 2 · Hero -->
     <section class="relative overflow-hidden">
-      <div class="ambient" aria-hidden="true"><span class="g1"></span><span class="g2"></span><span class="g3"></span></div>
+      <div class="ambient" aria-hidden="true"><span class="g1"></span><span class="g2"></span></div>
 
-      <div class="relative z-10 max-w-6xl mx-auto px-6 pt-20 sm:pt-24 pb-20 grid lg:grid-cols-2 gap-16 lg:gap-20 items-center">
-        <div>
-          <span class="font-mono text-xs uppercase tracking-wider text-signal border border-hairline rounded-full px-3 py-2 inline-block">
-            Communications · Automation · Analytics
-          </span>
-          <h1 class="font-display mt-6 text-[2.6rem] sm:text-6xl font-semibold leading-[1.05] tracking-tight">
-            Automate customer communications across all channels.
-          </h1>
-          <p class="mt-5 text-lg text-mid max-w-md leading-relaxed">
-            Engage customers through WhatsApp Business API and transactional email.
-            Automate workflows, track performance, and manage all communications from one unified platform.
-          </p>
+      <div class="relative z-10 max-w-6xl mx-auto px-6 pt-20 sm:pt-28 pb-16 sm:pb-20 text-center">
+        <span class="font-mono text-xs uppercase tracking-wider text-signal border border-hairline rounded-full px-3 py-2 inline-block">
+          Communications infrastructure
+        </span>
+        <h1 class="font-display mt-6 text-4xl sm:text-6xl font-semibold leading-[1.06] tracking-tight max-w-3xl mx-auto">
+          Communicate with customers through one intelligent infrastructure layer.
+        </h1>
+        <p class="mt-5 text-lg text-mid max-w-2xl mx-auto leading-relaxed">
+          Akilent connects WhatsApp Business messaging, transactional email, and automated
+          workflows into a unified communications platform.
+        </p>
 
-          <div class="mt-8 flex flex-wrap items-center gap-3">
-            <a href="/signup/" class="bg-signal text-[#12182B] text-sm font-semibold px-6 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5 shadow-[0_20px_50px_-20px_rgba(31,175,156,.55)]">
-              Start free trial
-            </a>
-            <a href="#pricing" class="text-sm font-medium text-white px-6 py-2 rounded-xl border border-hairline hover:border-white/40 hover:bg-white/[.03]">
-              See pricing
-            </a>
-          </div>
-          <p class="mt-4 font-mono text-xs text-lo">14-day trial · no card required · cancel anytime</p>
-
-          <ul class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mb-8">
-            <li class="flex items-center gap-2 text-xs text-mid">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Official Meta Cloud API
-            </li>
-            <li class="flex items-center gap-2 text-xs text-mid">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              DKIM-verified sending
-            </li>
-            <li class="flex items-center gap-2 text-xs text-mid">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Every send logged
-            </li>
-          </ul>
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a href="/signup/" class="cta-primary text-sm px-6 py-3 shadow-[0_20px_50px_-20px_rgba(255,176,32,.45)]">
+            Start building
+          </a>
+          <a href="#platform" class="cta-outline text-sm font-medium px-6 py-3">
+            View platform
+          </a>
         </div>
+        <p class="mt-4 font-mono text-xs text-lo">14-day trial · no card required · cancel anytime</p>
+      </div>
 
-        <!-- signature: live delivery console -->
-        <div class="console p-5 sm:p-6 mb-8">
-          <div class="flex items-center gap-1.5 mb-5">
+      <!-- 3 · Product interface preview -->
+      <div id="platform" class="relative z-10 max-w-5xl mx-auto px-6 pb-20 sm:pb-24">
+        <div class="console p-3 sm:p-4">
+          <div class="flex items-center gap-1.5 px-1 pb-3">
             <span class="console-dot bg-[#FFB020]"></span>
             <span class="console-dot bg-[#1FAF9C]"></span>
             <span class="console-dot bg-[#5E8BD9]"></span>
-            <span class="font-mono text-xs text-lo ml-2">delivery-log · live</span>
+            <span class="font-mono text-[11px] text-lo ml-2">console.akilent — communication overview</span>
           </div>
 
-          <div class="space-y-3">
-            <div class="console-row flex items-center justify-between px-4 py-4">
-              <div class="min-w-0 pr-3">
-                <p class="text-sm truncate">"Your order has shipped 📦"</p>
-                <p class="font-mono text-[11px] text-signal mt-1">WHATSAPP · +260 9XX XXX XXX</p>
-              </div>
-              <span class="ticks text-signal shrink-0">
-                <span class="tick-state"><svg class="tick-sent" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7" stroke="#838EA3" stroke-width="1.6" fill="none"/></svg><svg class="tick-delivered" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7M6 6l3 3 5-7" stroke="#838EA3" stroke-width="1.6" fill="none"/></svg><svg class="tick-read" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7M6 6l3 3 5-7" stroke="#1FAF9C" stroke-width="1.6" fill="none"/></svg></span>
-              </span>
-            </div>
+          <div class="mock-shell">
+            <aside class="mock-side" aria-hidden="true">
+              <p class="font-mono text-[10px] uppercase tracking-wider text-[#838EA3] px-2 mb-2">Workspace</p>
+              <div class="mock-nav-item active"><span class="dot"></span>Overview</div>
+              <div class="mock-nav-item"><span class="dot"></span>Messages</div>
+              <div class="mock-nav-item"><span class="dot"></span>Email</div>
+              <div class="mock-nav-item"><span class="dot"></span>WhatsApp</div>
+              <div class="mock-nav-item"><span class="dot"></span>Automations</div>
+              <div class="mock-nav-item"><span class="dot"></span>Templates</div>
+              <div class="mock-nav-item"><span class="dot"></span>Developers</div>
+              <div class="mock-nav-item"><span class="dot"></span>Analytics</div>
+            </aside>
 
-            <div class="console-row flex items-center justify-between px-4 py-4">
-              <div class="min-w-0 pr-3">
-                <p class="text-sm truncate">Invoice #4471 — due Friday</p>
-                <p class="font-mono text-[11px] text-mail mt-1">EMAIL · billing@yourdomain.com</p>
+            <div class="p-4 sm:p-5">
+              <div class="flex items-center justify-between mb-4">
+                <p class="font-display font-semibold text-sm text-[#12182B]">Communication overview</p>
+                <span class="cta-primary px-3 py-1.5 text-[11px]">New message</span>
               </div>
-              <span class="font-mono text-[11px] text-mail shrink-0">delivered</span>
-            </div>
 
-            <div class="console-row flex items-center justify-between px-4 py-4">
-              <div class="min-w-0 pr-3">
-                <p class="text-sm truncate">"Hi! Is this item back in stock?"</p>
-                <p class="font-mono text-[11px] text-rules mt-1">RULE · auto-routed to Sales</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="mock-card">
+                  <p class="font-mono text-[10px] uppercase tracking-wider text-[#657089]">Messages sent</p>
+                  <p class="font-display text-2xl font-semibold mt-1 text-[#12182B]">12,450</p>
+                  <p class="font-mono text-[10px] text-[#178F80] mt-1">▲ 8.2% this week</p>
+                </div>
+                <div class="mock-card">
+                  <p class="font-mono text-[10px] uppercase tracking-wider text-[#657089]">Delivery rate</p>
+                  <p class="font-display text-2xl font-semibold mt-1 text-[#12182B]">98.4%</p>
+                  <div class="h-1 rounded-full bg-[#E8EDF3] mt-2 overflow-hidden"><span class="block h-full w-[98%] bg-[#1FAF9C] rounded-full"></span></div>
+                </div>
+                <div class="mock-card">
+                  <p class="font-mono text-[10px] uppercase tracking-wider text-[#657089]">Active channels</p>
+                  <div class="mt-2 space-y-1.5 text-[13px] font-medium text-[#12182B]">
+                    <p class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C]"></span>WhatsApp <span class="font-mono text-[10px] text-[#178F80] ml-auto">✓ connected</span></p>
+                    <p class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C]"></span>Email <span class="font-mono text-[10px] text-[#178F80] ml-auto">✓ connected</span></p>
+                  </div>
+                </div>
+                <div class="mock-card">
+                  <p class="font-mono text-[10px] uppercase tracking-wider text-[#657089]">Automation rules</p>
+                  <p class="font-display text-2xl font-semibold mt-1 text-[#12182B]">24 <span class="text-sm font-medium text-[#657089]">active</span></p>
+                  <p class="font-mono text-[10px] text-[#657089] mt-1">last triggered 2 min ago</p>
+                </div>
               </div>
-              <span class="font-mono text-[11px] text-rules shrink-0">routed</span>
-            </div>
-
-            <div class="console-row flex items-center justify-between px-4 py-4">
-              <div class="min-w-0 pr-3">
-                <p class="text-sm truncate">Password reset link</p>
-                <p class="font-mono text-[11px] text-mail mt-1">EMAIL · auth@yourdomain.com</p>
-              </div>
-              <span class="font-mono text-[11px] text-mail shrink-0">delivered</span>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Features -->
-    <section id="features" class="border-y border-hairline bg-ink-2/40">
+    <!-- 4 · Channel platform -->
+    <section id="channels" class="band-light border-y border-[#E8EDF3]">
       <div class="max-w-6xl mx-auto px-6 py-20">
-        <div class="max-w-xl mb-8">
-          <p class="font-mono text-xs uppercase tracking-wider text-lo">Channels</p>
-          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">One integration, every way you reach a customer</h2>
+        <div class="max-w-xl mb-10">
+          <p class="font-mono text-xs uppercase tracking-wider text-[#657089]">Channels</p>
+          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">A communication operating system</h2>
+          <p class="mt-3 text-sm muted leading-relaxed">Every channel your customers use, behind one integration and one delivery log.</p>
         </div>
 
         <div class="grid sm:grid-cols-3 gap-6">
-          <div class="channel-card p-8">
-            <div class="icon-badge" style="background:var(--signal-glow); border-color:rgba(31,175,156,.3);">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a8 8 0 00-6.93 12.02L2 18l4.1-1.05A8 8 0 1010 2z" stroke="#1FAF9C" stroke-width="1.4"/><path d="M6.8 6.8c.2-.5.6-.5.9-.5h.4c.2 0 .4 0 .5.3.2.4.6 1.4.6 1.5.1.2 0 .3-.1.5l-.4.4c-.1.2-.2.3 0 .6.2.3.7 1.1 1.5 1.7.9.7 1.4.9 1.7 1 .2.1.4.1.5-.1l.5-.6c.2-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.4 0 .2 0 .8-.3 1.2-.3.4-1.2.9-1.9.9-.6 0-2-.3-3.6-1.7-1.9-1.6-2.5-3-2.6-3.2-.1-.3-.7-1-.7-1.9 0-.9.5-1.3.7-1.6z" fill="#1FAF9C"/></svg>
+          <div class="product-card overflow-hidden">
+            <div class="rail bg-[#1FAF9C]"></div>
+            <div class="p-7">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-[#12766A]">WhatsApp</p>
+              <h3 class="font-display mt-2 text-lg font-semibold">WhatsApp Business API</h3>
+              <div class="mt-4">
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#1FAF9C]"></span>Customer messaging</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#1FAF9C]"></span>Notifications</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#1FAF9C]"></span>Delivery tracking</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#1FAF9C]"></span>Templates</div>
+              </div>
             </div>
-            <p class="font-mono text-[11px] uppercase tracking-wider text-signal mt-5">WhatsApp</p>
-            <h3 class="font-display mt-2 text-lg font-semibold">Business API messaging</h3>
-            <p class="mt-3 text-sm text-mid leading-relaxed">
-              Connect your WhatsApp numbers, send templates and session replies, and watch
-              delivery move from sent to read — built on Meta's Cloud API.
-            </p>
           </div>
 
-          <div class="channel-card p-8">
-            <div class="icon-badge" style="background:var(--mail-glow); border-color:rgba(255,176,32,.3);">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="12" rx="2" stroke="#FFB020" stroke-width="1.4"/><path d="M3 5.5l7 5.5 7-5.5" stroke="#FFB020" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="product-card overflow-hidden">
+            <div class="rail bg-[#FFB020]"></div>
+            <div class="p-7">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-[#B26F06]">Email</p>
+              <h3 class="font-display mt-2 text-lg font-semibold">Transactional Email</h3>
+              <div class="mt-4">
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#FFB020]"></span>Email delivery</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#FFB020]"></span>Templates</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#FFB020]"></span>Transaction notifications</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#FFB020]"></span>Analytics</div>
+              </div>
             </div>
-            <p class="font-mono text-[11px] uppercase tracking-wider text-mail mt-5">Email</p>
-            <h3 class="font-display mt-2 text-lg font-semibold">Transactional sending</h3>
-            <p class="mt-3 text-sm text-mid leading-relaxed">
-              Verify a sending domain with DKIM in one click and send through a simple API.
-              Deliverability is handled; every send is logged.
-            </p>
           </div>
 
-          <div class="channel-card p-8">
-            <div class="icon-badge" style="background:var(--rules-glow); border-color:rgba(94,139,217,.3);">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="5" cy="5" r="2" stroke="#5E8BD9" stroke-width="1.4"/><circle cx="15" cy="15" r="2" stroke="#5E8BD9" stroke-width="1.4"/><circle cx="15" cy="5" r="2" stroke="#5E8BD9" stroke-width="1.4"/><path d="M7 5h6M15 7v6M9.5 6.5L13.5 13.5" stroke="#5E8BD9" stroke-width="1.4"/></svg>
+          <div class="product-card overflow-hidden">
+            <div class="rail bg-[#5E8BD9]"></div>
+            <div class="p-7">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-[#2F58AB]">Automation</p>
+              <h3 class="font-display mt-2 text-lg font-semibold">Automation Engine</h3>
+              <div class="mt-4">
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#5E8BD9]"></span>Workflow rules</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#5E8BD9]"></span>Triggers</div>
+                <div class="spec-item"><span class="w-1 h-1 rounded-full bg-[#5E8BD9]"></span>Integrations</div>
+              </div>
             </div>
-            <p class="font-mono text-[11px] uppercase tracking-wider text-rules mt-5">Rules</p>
-            <h3 class="font-display mt-2 text-lg font-semibold">Automation &amp; routing</h3>
-            <p class="mt-3 text-sm text-mid leading-relaxed">
-              Auto-reply and route incoming messages by keyword or hours, with an optional
-              Bitrix24 CRM sync as an add-on.
-            </p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Pricing -->
-    <section id="pricing" class="max-w-6xl mx-auto px-6 py-20 sm:py-24">
-      <div class="text-center mb-8">
-        <p class="font-mono text-xs uppercase tracking-wider text-lo">Pricing</p>
-        <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">Usage-based, no surprises</h2>
-        <p class="mt-2 text-sm text-mid">Start on a free trial. Upgrade when you outgrow it.</p>
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
-        {% for plan in plans %}
-          <div class="plan-card {% if plan.slug == 'professional' %}featured lg:-translate-y-2{% endif %} p-8 flex flex-col">
-            {% if plan.slug == 'professional' %}
-              <span class="font-mono text-[10px] font-medium uppercase tracking-wider text-signal mb-3 inline-flex items-center gap-1.5">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="#1FAF9C"><path d="M5 0l1.3 3.2L10 4l-3.2 1.3L5 10 3.7 6.7 0 5.4l3.7-1.3z"/></svg>
-                Most popular
-              </span>
-            {% endif %}
-            <p class="font-display font-semibold text-lg">{{ plan.name }}</p>
-            <div class="mt-2 flex items-end gap-1">
-              <span class="font-display text-4xl font-semibold tracking-tight">${{ plan.price_monthly|floatformat:0 }}</span>
-              {% if plan.price_monthly > 0 %}<span class="text-sm text-lo mb-1">/mo</span>{% endif %}
-            </div>
+    <!-- 5 · Workflow visualization -->
+    <section id="automations" class="bg-ink">
+      <div class="max-w-6xl mx-auto px-6 py-20 sm:py-24">
+        <div class="max-w-xl mb-12">
+          <p class="font-mono text-xs uppercase tracking-wider text-lo">Automations</p>
+          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">Communications infrastructure, end to end</h2>
+          <p class="mt-3 text-sm text-mid leading-relaxed">Events enter the platform, rules decide, channels deliver. One pipeline for every message.</p>
+        </div>
 
-            <div class="mt-6 flex-1 font-mono text-[13px] text-mid">
-              <div class="spec-row flex justify-between"><span>WhatsApp</span><span class="text-white">{% if plan.max_whatsapp_numbers == -1 %}Unlimited{% else %}{{ plan.max_whatsapp_numbers }}{% endif %} number{{ plan.max_whatsapp_numbers|pluralize }}</span></div>
-              <div class="spec-row flex justify-between"><span>Conversations</span><span class="text-white">{% if plan.max_conversations_per_month == -1 %}Unlimited{% else %}{{ plan.max_conversations_per_month }}{% endif %}/mo</span></div>
-              <div class="spec-row flex justify-between"><span>Emails</span><span class="text-white">{% if plan.max_emails_per_month == -1 %}Unlimited{% else %}{{ plan.max_emails_per_month }}{% endif %}/mo</span></div>
-              {% if plan.has_priority_support %}<div class="spec-row flex justify-between"><span>Support</span><span class="text-white">Priority</span></div>{% endif %}
-            </div>
-
-            <a href="/signup/" class="mt-8 block text-center {% if plan.slug == 'professional' %}bg-signal text-[#12182B] hover:opacity-90{% else %}bg-white/5 text-white border border-hairline hover:border-white/40 hover:bg-white/[.08]{% endif %} text-sm font-semibold py-3 rounded-xl">
-              {% if plan.slug == 'trial' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
-            </a>
-            <p class="mt-3 text-center font-mono text-[11px] text-lo">
-              {% if plan.slug == 'trial' %}No card required{% else %}Billed monthly · cancel anytime{% endif %}
-            </p>
+        <div class="max-w-lg mx-auto" role="img" aria-label="Workflow: customer event flows into the Akilent platform, through the routing engine, and out to WhatsApp, email, webhooks, and applications">
+          <div class="flow-node">
+            <p class="font-mono text-[11px] uppercase tracking-wider text-mail">Event</p>
+            <p class="text-sm font-medium mt-1">Customer Event</p>
+            <p class="font-mono text-[11px] text-lo mt-1">order.shipped · payment.received · message.inbound</p>
           </div>
-        {% endfor %}
+          <div class="flow-line"></div>
+          <div class="flow-node core">
+            <p class="font-mono text-[11px] uppercase tracking-wider text-signal">Platform</p>
+            <p class="text-sm font-medium mt-1">Akilent Platform</p>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-node">
+            <p class="font-mono text-[11px] uppercase tracking-wider text-rules">Rules</p>
+            <p class="text-sm font-medium mt-1">Routing Engine</p>
+            <p class="font-mono text-[11px] text-lo mt-1">24 active rules · triggers · schedules</p>
+          </div>
+          <div class="flow-line"></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="flow-chip"><span class="mark bg-[#1FAF9C]"></span>WhatsApp</div>
+            <div class="flow-chip"><span class="mark bg-[#FFB020]"></span>Email</div>
+            <div class="flow-chip"><span class="mark bg-[#5E8BD9]"></span>Webhooks</div>
+            <div class="flow-chip"><span class="mark bg-[#838EA3]"></span>Applications</div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- CTA -->
-    <section class="border-t border-hairline relative overflow-hidden">
-      <div class="ambient" aria-hidden="true" style="opacity:.6;"><span class="g1" style="width:360px;height:360px;top:-140px;left:10%;"></span></div>
-      <div class="relative z-10 max-w-6xl mx-auto px-6 py-16 flex flex-col sm:flex-row items-center justify-between gap-6">
+    <!-- 6 · Developer platform -->
+    <section id="developers" class="bg-ink border-t border-hairline">
+      <div class="max-w-6xl mx-auto px-6 py-20 sm:py-24 grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
         <div>
-          <h2 class="font-display text-2xl sm:text-3xl font-semibold tracking-tight">Ready to start sending?</h2>
-          <p class="mt-2 text-mid text-sm">Create your workspace and connect a channel in minutes.</p>
+          <p class="font-mono text-xs uppercase tracking-wider text-lo">Developers</p>
+          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">Built for teams that automate communication.</h2>
+          <p class="mt-4 text-sm text-mid leading-relaxed max-w-md">
+            Send through a single REST API, receive delivery and status events over webhooks,
+            and integrate in minutes.
+          </p>
+          <ul class="mt-6 space-y-3 text-sm">
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">API access</span> — REST endpoints for WhatsApp and email</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">Webhooks</span> — delivery and status callbacks in real time</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><a href="{% url 'help' %}" class="text-white font-medium underline decoration-[#26314A] underline-offset-4 hover:decoration-[#1FAF9C]">Documentation</a> — guides for rapid integration</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">SDKs</span> — client libraries and integration support</span></li>
+          </ul>
         </div>
-        <a href="/signup/" class="bg-signal text-[#12182B] text-sm font-semibold px-6 py-4 rounded-xl hover:opacity-90 hover:-translate-y-0.5 shadow-[0_20px_50px_-20px_rgba(31,175,156,.55)] whitespace-nowrap">
-          Create your account
-        </a>
+
+        <div class="code-panel">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-hairline">
+            <span class="font-mono text-[11px] text-lo">send-message.sh</span>
+            <span class="font-mono text-[10px] uppercase tracking-wider text-signal">POST /messages</span>
+          </div>
+          <pre class="font-mono" aria-label="Example API request"><code><span class="tok-m">POST</span> <span class="text-white">/api/v1/messages</span>
+<span class="tok-k">Authorization:</span> Bearer ak_live_•••
+
+{
+  <span class="tok-k">"channel"</span>:   <span class="tok-s">"whatsapp"</span>,
+  <span class="tok-k">"recipient"</span>: <span class="tok-s">"+260971234567"</span>,
+  <span class="tok-k">"template"</span>:  <span class="tok-a">"payment_received"</span>
+}
+
+<span class="tok-k">→ 202 Accepted</span>  <span class="tok-s">"status": "queued"</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 · Trust / capabilities -->
+    <section class="band-light border-y border-[#E8EDF3]">
+      <div class="max-w-6xl mx-auto px-6 py-14">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-8 gap-y-10 text-center">
+          <div>
+            <p class="font-display text-xl font-semibold">99.9%</p>
+            <p class="mt-1 text-xs muted">delivery infrastructure</p>
+          </div>
+          <div>
+            <p class="font-display text-xl font-semibold">Real-time</p>
+            <p class="mt-1 text-xs muted">message tracking</p>
+          </div>
+          <div>
+            <p class="font-display text-xl font-semibold">Secure</p>
+            <p class="mt-1 text-xs muted">API integrations</p>
+          </div>
+          <div>
+            <p class="font-display text-xl font-semibold">Enterprise</p>
+            <p class="mt-1 text-xs muted">permissions &amp; roles</p>
+          </div>
+          <div class="col-span-2 sm:col-span-1">
+            <p class="font-display text-xl font-semibold">Analytics</p>
+            <p class="mt-1 text-xs muted">and reporting</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 · Pricing -->
+    <section id="pricing" class="band-light">
+      <div class="max-w-6xl mx-auto px-6 py-20 sm:py-24">
+        <div class="text-center mb-10">
+          <p class="font-mono text-xs uppercase tracking-wider text-[#657089]">Pricing</p>
+          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">Usage-based, no surprises</h2>
+          <p class="mt-2 text-sm muted">Start on a free trial. Upgrade when you outgrow it.</p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+          {% for plan in plans %}
+            <div class="plan-card {% if plan.slug == 'professional' %}featured lg:-translate-y-2{% endif %} p-8 flex flex-col">
+              {% if plan.slug == 'professional' %}
+                <span class="font-mono text-[10px] font-medium uppercase tracking-wider text-[#12766A] mb-3 inline-flex items-center gap-1.5">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="#1FAF9C"><path d="M5 0l1.3 3.2L10 4l-3.2 1.3L5 10 3.7 6.7 0 5.4l3.7-1.3z"/></svg>
+                  Most popular
+                </span>
+              {% endif %}
+              <p class="font-display font-semibold text-lg">{{ plan.name }}</p>
+              <div class="mt-2 flex items-end gap-1">
+                <span class="font-display text-4xl font-semibold tracking-tight">${{ plan.price_monthly|floatformat:0 }}</span>
+                {% if plan.price_monthly > 0 %}<span class="text-sm text-[#657089] mb-1">/mo</span>{% endif %}
+              </div>
+
+              <div class="mt-6 flex-1 font-mono text-[13px] text-[#46516B]">
+                <div class="spec-row flex justify-between"><span>WhatsApp</span><span class="text-[#12182B] font-medium">{% if plan.max_whatsapp_numbers == -1 %}Unlimited{% else %}{{ plan.max_whatsapp_numbers }}{% endif %} number{{ plan.max_whatsapp_numbers|pluralize }}</span></div>
+                <div class="spec-row flex justify-between"><span>Conversations</span><span class="text-[#12182B] font-medium">{% if plan.max_conversations_per_month == -1 %}Unlimited{% else %}{{ plan.max_conversations_per_month }}{% endif %}/mo</span></div>
+                <div class="spec-row flex justify-between"><span>Emails</span><span class="text-[#12182B] font-medium">{% if plan.max_emails_per_month == -1 %}Unlimited{% else %}{{ plan.max_emails_per_month }}{% endif %}/mo</span></div>
+                {% if plan.has_priority_support %}<div class="spec-row flex justify-between"><span>Support</span><span class="text-[#12182B] font-medium">Priority</span></div>{% endif %}
+              </div>
+
+              <a href="/signup/" class="mt-8 block text-center text-sm font-semibold py-3 rounded-[10px] {% if plan.slug == 'professional' %}cta-primary{% else %}cta-outline-light{% endif %}">
+                {% if plan.slug == 'trial' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
+              </a>
+              <p class="mt-3 text-center font-mono text-[11px] text-[#657089]">
+                {% if plan.slug == 'trial' %}No card required{% else %}Billed monthly · cancel anytime{% endif %}
+              </p>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 · Product CTA -->
+    <section class="bg-ink border-t border-hairline relative overflow-hidden">
+      <div class="ambient" aria-hidden="true" style="opacity:.5;"><span class="g1" style="width:360px;height:360px;top:-140px;left:15%;"></span></div>
+      <div class="relative z-10 max-w-6xl mx-auto px-6 py-16 sm:py-20 text-center">
+        <h2 class="font-display text-2xl sm:text-3xl font-semibold tracking-tight">Start powering your customer communications.</h2>
+        <p class="mt-3 text-mid text-sm max-w-md mx-auto">Create your workspace, connect a channel, and send your first message in minutes.</p>
+        <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <a href="/signup/" class="cta-primary text-sm px-6 py-3 shadow-[0_20px_50px_-20px_rgba(255,176,32,.45)]">
+            Create account
+          </a>
+          <a href="{% url 'help' %}" class="cta-outline text-sm font-medium px-6 py-3">
+            Explore documentation
+          </a>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="border-t border-hairline">
-    <div class="max-w-6xl mx-auto px-6 py-8 text-center font-mono text-xs text-lo">
-      © Akilent · Digital Communications &amp; Automation Platform
+    <div class="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs text-lo">
+      <span>© Akilent · Communications infrastructure for business</span>
+      <span class="flex items-center gap-4">
+        <a href="#platform" class="hover:text-white">Platform</a>
+        <a href="#pricing" class="hover:text-white">Pricing</a>
+        <a href="{% url 'help' %}" class="hover:text-white">Documentation</a>
+      </span>
     </div>
   </footer>
 
