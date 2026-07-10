@@ -3,122 +3,431 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automator — WhatsApp Business API &amp; Email for teams</title>
+  <title>Akilent — Digital Communications &amp; Automation Platform</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --ink:#0E1526;      /* Night Ops Navy */
+      --ink-2:#161F35;
+      --ink-3:#1C2640;
+      --surface:rgba(255,255,255,.025);
+      --hairline:#26314A;
+      --hairline-strong:rgba(255,255,255,.16);
+      --text-hi:#FAFBFC;
+      --text-mid:#A8B2C4;
+      --text-lo:#838EA3;
+      --signal:#1FAF9C;   /* whatsapp channel — Transmit Teal */
+      --signal-ink:#12182B;
+      --signal-glow:rgba(31,175,156,.35);
+      --mail:#FFB020;     /* email channel — Signal Amber */
+      --mail-glow:rgba(255,176,32,.28);
+      --rules:#5E8BD9;    /* automation channel — info blue */
+      --rules-glow:rgba(94,139,217,.28);
+      --radius-lg:20px;
+      --radius-md:16px;
+      --ease:cubic-bezier(.16,1,.3,1);
+    }
+    *{ box-sizing:border-box; }
+    html{ scroll-behavior:smooth; }
+    body{
+      background:var(--ink);
+      color:var(--text-hi);
+      font-family:'Inter',ui-sans-serif,system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+    }
+    .font-display{ font-family:'Space Grotesk',ui-sans-serif,sans-serif; letter-spacing:-0.015em; }
+    .font-mono{ font-family:'JetBrains Mono',ui-monospace,monospace; letter-spacing:.01em; }
+    .text-mid{ color:var(--text-mid); }
+    .text-lo{ color:var(--text-lo); }
+    .bg-ink{ background:var(--ink); }
+    .bg-ink-2{ background:var(--ink-2); }
+    .bg-ink-3{ background:var(--ink-3); }
+    .border-hairline{ border-color:var(--hairline); }
+    .text-signal{ color:var(--signal); }
+    .text-mail{ color:var(--mail); }
+    .text-rules{ color:var(--rules); }
+    .bg-signal{ background:var(--signal); }
+
+    a, button, label, input{ transition:color .15s ease, background-color .15s ease, border-color .2s ease, transform .2s var(--ease), box-shadow .25s ease, opacity .2s ease; }
+
+    /* accessible focus states everywhere */
+    a:focus-visible, button:focus-visible, label:focus-visible, input:focus-visible{
+      outline:2px solid var(--signal);
+      outline-offset:3px;
+      border-radius:6px;
+    }
+
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    /* ambient background glow, decorative only */
+    .ambient{ position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+    .ambient span{ position:absolute; border-radius:999px; filter:blur(90px); opacity:.22; }
+    .ambient .g1{ width:520px; height:520px; top:-160px; left:-120px; background:var(--signal); animation:drift1 24s ease-in-out infinite; }
+    .ambient .g2{ width:460px; height:460px; top:-40px; right:-160px; background:var(--rules); animation:drift2 28s ease-in-out infinite; }
+    .ambient .g3{ width:380px; height:380px; bottom:-200px; left:35%; background:var(--mail); opacity:.14; animation:drift1 32s ease-in-out infinite reverse; }
+    @keyframes drift1{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(30px,25px); } }
+    @keyframes drift2{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(-25px,20px); } }
+
+    /* signature: live delivery console */
+    .console{
+      position:relative;
+      background:linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
+      border:1px solid var(--hairline);
+      border-radius:var(--radius-lg);
+      box-shadow:0 40px 100px -40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.02) inset;
+    }
+    .console::before{
+      content:"";
+      position:absolute; inset:0;
+      border-radius:inherit;
+      padding:1px;
+      background:linear-gradient(160deg, rgba(31,175,156,.35), transparent 30%, transparent 70%, rgba(94,139,217,.25));
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor;
+      mask-composite:exclude;
+      pointer-events:none;
+    }
+    .console-dot{ width:7px; height:7px; border-radius:999px; }
+    .console-row{
+      opacity:0;
+      transform:translateY(6px);
+      animation:rowIn .5s var(--ease) forwards;
+      background:var(--ink-3);
+      border:1px solid var(--hairline);
+      border-radius:14px;
+      transition:border-color .2s ease, background-color .2s ease;
+    }
+    .console-row:hover{ border-color:var(--hairline-strong); background:#1C2640; }
+    .console-row:nth-child(1){ animation-delay:.2s; }
+    .console-row:nth-child(2){ animation-delay:1.3s; }
+    .console-row:nth-child(3){ animation-delay:2.4s; }
+    .console-row:nth-child(4){ animation-delay:3.5s; }
+    @keyframes rowIn{ to{ opacity:1; transform:translateY(0); } }
+
+    .ticks{ display:inline-flex; align-items:center; gap:1px; }
+    .tick-state{ position:relative; width:16px; height:12px; }
+    .tick-state svg{ position:absolute; inset:0; opacity:0; animation:tickCycle 4.2s ease infinite; }
+    .tick-sent{ animation-delay:0s !important; }
+    .tick-delivered{ animation-delay:.5s !important; }
+    .tick-read{ animation-delay:1s !important; }
+    @keyframes tickCycle{
+      0%, 8%{ opacity:0; }
+      14%, 96%{ opacity:1; }
+      100%{ opacity:1; }
+    }
+    .pulse-ring{ animation:pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse{
+      0%, 100%{ box-shadow:0 0 0 0 rgba(31,175,156,.5); }
+      50%{ box-shadow:0 0 0 6px rgba(31,175,156,0); }
+    }
+
+    /* feature / channel cards */
+    .channel-card{
+      position:relative;
+      background:linear-gradient(180deg, var(--surface), transparent);
+      background-color:var(--ink-2);
+      border:1px solid var(--hairline);
+      border-radius:var(--radius-lg);
+      transition:border-color .25s ease, transform .3s var(--ease), box-shadow .3s ease;
+    }
+    .channel-card:hover{ transform:translateY(-4px); border-color:var(--hairline-strong); box-shadow:0 24px 60px -32px rgba(0,0,0,.6); }
+    .icon-badge{
+      width:44px; height:44px;
+      border-radius:12px;
+      display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--hairline);
+    }
+
+    /* pricing */
+    .plan-card{
+      position:relative;
+      background:var(--ink-2);
+      border:1px solid var(--hairline);
+      border-radius:var(--radius-lg);
+      transition:transform .3s var(--ease), border-color .25s ease, box-shadow .3s ease;
+    }
+    .plan-card:hover{ transform:translateY(-4px); border-color:var(--hairline-strong); }
+    .plan-card.featured{
+      border-color:transparent;
+      background:
+        linear-gradient(var(--ink-2), var(--ink-2)) padding-box,
+        linear-gradient(160deg, var(--signal), var(--rules)) border-box;
+      border:1px solid transparent;
+      box-shadow:0 35px 80px -35px rgba(31,175,156,.35);
+    }
+    .plan-card.featured:hover{ transform:translateY(-6px); }
+    .spec-row{ border-top:1px solid var(--hairline); padding-top:.7rem; padding-bottom:.7rem; }
+    .spec-row:first-child{ border-top:none; padding-top:0; }
+
+    /* mobile menu accordion (no JS) */
+    #mobile-panel{
+      display:grid;
+      grid-template-rows:0fr;
+      transition:grid-template-rows .32s var(--ease);
+    }
+    #mobile-toggle:checked ~ #mobile-panel{ grid-template-rows:1fr; }
+    #mobile-panel > div{ overflow:hidden; }
+    #mobile-toggle:focus-visible ~ label .burger-box{ outline:2px solid var(--signal); outline-offset:3px; border-radius:8px; }
+    .burger-line{ transition:transform .25s var(--ease), opacity .2s ease; }
+    #mobile-toggle:checked ~ label .l1{ transform:translateY(5.5px) rotate(45deg); }
+    #mobile-toggle:checked ~ label .l2{ opacity:0; }
+    #mobile-toggle:checked ~ label .l3{ transform:translateY(-5.5px) rotate(-45deg); }
+
+    @media (prefers-reduced-motion: reduce){
+      html{ scroll-behavior:auto; }
+      .console-row, .tick-state svg, .pulse-ring, .ambient span{ animation:none !important; opacity:1 !important; }
+      .channel-card:hover, .plan-card:hover{ transform:none; }
+    }
+  </style>
 </head>
-<body class="bg-white text-gray-900 antialiased">
+<body class="bg-ink">
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:top-3 focus:left-3 focus:bg-signal focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-medium">Skip to content</a>
 
   <!-- Nav -->
-  <header class="border-b border-gray-100">
+  <header class="border-b border-hairline sticky top-0 z-30 bg-ink/85 backdrop-blur-md">
     <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="/" class="font-semibold text-blue-600 text-lg">Automator</a>
-      <nav class="flex items-center gap-6 text-sm">
-        <a href="#features" class="text-gray-600 hover:text-gray-900 hidden sm:inline">Features</a>
-        <a href="#pricing" class="text-gray-600 hover:text-gray-900 hidden sm:inline">Pricing</a>
+      <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5">
+        <span class="w-2 h-2 rounded-full bg-signal pulse-ring"></span>
+        Akilent
+      </a>
+      <nav class="hidden sm:flex items-center gap-8 text-sm" aria-label="Primary">
+        <a href="#features" class="text-mid hover:text-white">Features</a>
+        <a href="#pricing" class="text-mid hover:text-white">Pricing</a>
         {% if user.is_authenticated %}
-          <a href="/dashboard/" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl">Go to dashboard</a>
+          <a href="/dashboard/" class="bg-signal text-[#12182B] font-semibold px-4 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5">Go to dashboard</a>
         {% else %}
-          <a href="/auth/login/" class="text-gray-600 hover:text-gray-900">Sign in</a>
-          <a href="/signup/" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl">Get started</a>
+          <a href="/auth/login/" class="text-mid hover:text-white">Sign in</a>
+          <a href="/signup/" class="bg-signal text-[#12182B] font-semibold px-4 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5">Get started</a>
         {% endif %}
       </nav>
+
+      <input type="checkbox" id="mobile-toggle" class="sr-only">
+      <label for="mobile-toggle" class="sm:hidden burger-box relative w-9 h-9 -mr-1.5 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu" aria-controls="mobile-panel">
+        <span class="burger-line l1 block w-5 h-[1.5px] bg-white"></span>
+        <span class="burger-line l2 block w-5 h-[1.5px] bg-white"></span>
+        <span class="burger-line l3 block w-5 h-[1.5px] bg-white"></span>
+      </label>
     </div>
+
+    <nav id="mobile-panel" class="sm:hidden border-t border-hairline" aria-label="Mobile">
+      <div>
+        <div class="flex flex-col gap-1 px-6 py-5 text-sm">
+          <a href="#features" class="text-mid hover:text-white py-2.5">Features</a>
+          <a href="#pricing" class="text-mid hover:text-white py-2.5">Pricing</a>
+          {% if user.is_authenticated %}
+            <a href="/dashboard/" class="bg-signal text-[#12182B] font-semibold px-4 py-3 rounded-xl text-center mt-2">Go to dashboard</a>
+          {% else %}
+            <a href="/auth/login/" class="text-mid hover:text-white py-2.5">Sign in</a>
+            <a href="/signup/" class="bg-signal text-[#12182B] font-semibold px-4 py-3 rounded-xl text-center mt-2">Get started</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
   </header>
 
-  <!-- Hero -->
-  <section class="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
-    <span class="inline-block text-xs font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-      WhatsApp Business API · Transactional Email
-    </span>
-    <h1 class="mt-6 text-4xl sm:text-5xl font-bold tracking-tight max-w-3xl mx-auto leading-tight">
-      Reach your customers on WhatsApp and email — from one platform.
-    </h1>
-    <p class="mt-5 text-lg text-gray-500 max-w-2xl mx-auto">
-      Send WhatsApp messages through the official Business API and deliver transactional
-      email from your own domains. Self-serve onboarding, usage-based plans, no infrastructure to run.
-    </p>
-    <div class="mt-8 flex items-center justify-center gap-3">
-      <a href="/signup/" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-3 rounded-xl">
-        Start free trial
-      </a>
-      <a href="#pricing" class="text-sm font-medium text-gray-700 px-6 py-3 rounded-xl border border-gray-200 hover:bg-gray-50">
-        See pricing
-      </a>
-    </div>
-    <p class="mt-4 text-xs text-gray-400">14-day free trial · no credit card required</p>
-  </section>
+  <main id="main">
+    <!-- Hero -->
+    <section class="relative overflow-hidden">
+      <div class="ambient" aria-hidden="true"><span class="g1"></span><span class="g2"></span><span class="g3"></span></div>
 
-  <!-- Features -->
-  <section id="features" class="bg-gray-50 border-y border-gray-100">
-    <div class="max-w-6xl mx-auto px-6 py-16 grid sm:grid-cols-3 gap-8">
-      <div class="bg-white rounded-2xl border border-gray-200 p-6">
-        <div class="w-10 h-10 rounded-xl bg-green-100 text-green-600 flex items-center justify-center text-lg">💬</div>
-        <h3 class="mt-4 font-semibold">WhatsApp Business API</h3>
-        <p class="mt-2 text-sm text-gray-500">
-          Connect your WhatsApp numbers, send templates and session messages, and track
-          delivery — built on Meta's Cloud API.
-        </p>
-      </div>
-      <div class="bg-white rounded-2xl border border-gray-200 p-6">
-        <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-lg">✉️</div>
-        <h3 class="mt-4 font-semibold">Transactional email</h3>
-        <p class="mt-2 text-sm text-gray-500">
-          Provision sending domains with DKIM in a click and send via a simple API.
-          Deliverability handled, logs included.
-        </p>
-      </div>
-      <div class="bg-white rounded-2xl border border-gray-200 p-6">
-        <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center text-lg">⚙️</div>
-        <h3 class="mt-4 font-semibold">Automation &amp; integrations</h3>
-        <p class="mt-2 text-sm text-gray-500">
-          Rules to auto-reply and route messages, with optional Bitrix24 CRM sync as an addon.
-        </p>
-      </div>
-    </div>
-  </section>
+      <div class="relative z-10 max-w-6xl mx-auto px-6 pt-20 sm:pt-24 pb-20 grid lg:grid-cols-2 gap-16 lg:gap-20 items-center">
+        <div>
+          <span class="font-mono text-xs uppercase tracking-wider text-signal border border-hairline rounded-full px-3 py-2 inline-block">
+            Communications · Automation · Analytics
+          </span>
+          <h1 class="font-display mt-6 text-[2.6rem] sm:text-6xl font-semibold leading-[1.05] tracking-tight">
+            Automate customer communications across all channels.
+          </h1>
+          <p class="mt-5 text-lg text-mid max-w-md leading-relaxed">
+            Engage customers through WhatsApp Business API and transactional email.
+            Automate workflows, track performance, and manage all communications from one unified platform.
+          </p>
 
-  <!-- Pricing -->
-  <section id="pricing" class="max-w-6xl mx-auto px-6 py-16">
-    <div class="text-center mb-10">
-      <h2 class="text-2xl font-bold">Simple, usage-based pricing</h2>
-      <p class="mt-2 text-sm text-gray-500">Start on a free trial. Upgrade as you grow.</p>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      {% for plan in plans %}
-        <div class="bg-white rounded-2xl border {% if plan.slug == 'professional' %}border-blue-500 ring-2 ring-blue-500{% else %}border-gray-200{% endif %} p-6 flex flex-col">
-          <p class="font-semibold">{{ plan.name }}</p>
-          <div class="mt-1 flex items-end gap-1">
-            <span class="text-3xl font-bold">${{ plan.price_monthly|floatformat:0 }}</span>
-            {% if plan.price_monthly > 0 %}<span class="text-sm text-gray-400 mb-0.5">/mo</span>{% endif %}
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a href="/signup/" class="bg-signal text-[#12182B] text-sm font-semibold px-6 py-2 rounded-xl hover:opacity-90 hover:-translate-y-0.5 shadow-[0_20px_50px_-20px_rgba(31,175,156,.55)]">
+              Start free trial
+            </a>
+            <a href="#pricing" class="text-sm font-medium text-white px-6 py-2 rounded-xl border border-hairline hover:border-white/40 hover:bg-white/[.03]">
+              See pricing
+            </a>
           </div>
-          <ul class="mt-4 space-y-1.5 text-sm text-gray-600 flex-1">
-            <li>{% if plan.max_whatsapp_numbers == -1 %}Unlimited{% else %}{{ plan.max_whatsapp_numbers }}{% endif %} WhatsApp number{{ plan.max_whatsapp_numbers|pluralize }}</li>
-            <li>{% if plan.max_conversations_per_month == -1 %}Unlimited{% else %}{{ plan.max_conversations_per_month }}{% endif %} conversations/mo</li>
-            <li>{% if plan.max_emails_per_month == -1 %}Unlimited{% else %}{{ plan.max_emails_per_month }}{% endif %} emails/mo</li>
-            {% if plan.has_priority_support %}<li>Priority support</li>{% endif %}
+          <p class="mt-4 font-mono text-xs text-lo">14-day trial · no card required · cancel anytime</p>
+
+          <ul class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mb-8">
+            <li class="flex items-center gap-2 text-xs text-mid">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Official Meta Cloud API
+            </li>
+            <li class="flex items-center gap-2 text-xs text-mid">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              DKIM-verified sending
+            </li>
+            <li class="flex items-center gap-2 text-xs text-mid">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-signal shrink-0"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Every send logged
+            </li>
           </ul>
-          <a href="/signup/" class="mt-6 block text-center {% if plan.slug == 'professional' %}bg-blue-600 hover:bg-blue-700{% else %}bg-gray-900 hover:bg-gray-800{% endif %} text-white text-sm font-medium py-2.5 rounded-xl">
-            {% if plan.slug == 'trial' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
-          </a>
         </div>
-      {% endfor %}
-    </div>
-  </section>
 
-  <!-- CTA -->
-  <section class="bg-blue-600">
-    <div class="max-w-6xl mx-auto px-6 py-14 text-center text-white">
-      <h2 class="text-2xl font-bold">Ready to start sending?</h2>
-      <p class="mt-2 text-blue-100">Create your workspace and connect a channel in minutes.</p>
-      <a href="/signup/" class="mt-6 inline-block bg-white text-blue-700 text-sm font-medium px-6 py-3 rounded-xl hover:bg-blue-50">
-        Create your account
-      </a>
-    </div>
-  </section>
+        <!-- signature: live delivery console -->
+        <div class="console p-5 sm:p-6 mb-8">
+          <div class="flex items-center gap-1.5 mb-5">
+            <span class="console-dot bg-[#FFB020]"></span>
+            <span class="console-dot bg-[#1FAF9C]"></span>
+            <span class="console-dot bg-[#5E8BD9]"></span>
+            <span class="font-mono text-xs text-lo ml-2">delivery-log · live</span>
+          </div>
 
-  <footer class="border-t border-gray-100">
-    <div class="max-w-6xl mx-auto px-6 py-8 text-center text-xs text-gray-400">
-      © Automator · WhatsApp Business API &amp; email for teams
+          <div class="space-y-3">
+            <div class="console-row flex items-center justify-between px-4 py-4">
+              <div class="min-w-0 pr-3">
+                <p class="text-sm truncate">"Your order has shipped 📦"</p>
+                <p class="font-mono text-[11px] text-signal mt-1">WHATSAPP · +260 9XX XXX XXX</p>
+              </div>
+              <span class="ticks text-signal shrink-0">
+                <span class="tick-state"><svg class="tick-sent" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7" stroke="#838EA3" stroke-width="1.6" fill="none"/></svg><svg class="tick-delivered" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7M6 6l3 3 5-7" stroke="#838EA3" stroke-width="1.6" fill="none"/></svg><svg class="tick-read" width="16" height="12" viewBox="0 0 16 12"><path d="M1 6l3 3 5-7M6 6l3 3 5-7" stroke="#1FAF9C" stroke-width="1.6" fill="none"/></svg></span>
+              </span>
+            </div>
+
+            <div class="console-row flex items-center justify-between px-4 py-4">
+              <div class="min-w-0 pr-3">
+                <p class="text-sm truncate">Invoice #4471 — due Friday</p>
+                <p class="font-mono text-[11px] text-mail mt-1">EMAIL · billing@yourdomain.com</p>
+              </div>
+              <span class="font-mono text-[11px] text-mail shrink-0">delivered</span>
+            </div>
+
+            <div class="console-row flex items-center justify-between px-4 py-4">
+              <div class="min-w-0 pr-3">
+                <p class="text-sm truncate">"Hi! Is this item back in stock?"</p>
+                <p class="font-mono text-[11px] text-rules mt-1">RULE · auto-routed to Sales</p>
+              </div>
+              <span class="font-mono text-[11px] text-rules shrink-0">routed</span>
+            </div>
+
+            <div class="console-row flex items-center justify-between px-4 py-4">
+              <div class="min-w-0 pr-3">
+                <p class="text-sm truncate">Password reset link</p>
+                <p class="font-mono text-[11px] text-mail mt-1">EMAIL · auth@yourdomain.com</p>
+              </div>
+              <span class="font-mono text-[11px] text-mail shrink-0">delivered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="border-y border-hairline bg-ink-2/40">
+      <div class="max-w-6xl mx-auto px-6 py-20">
+        <div class="max-w-xl mb-8">
+          <p class="font-mono text-xs uppercase tracking-wider text-lo">Channels</p>
+          <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">One integration, every way you reach a customer</h2>
+        </div>
+
+        <div class="grid sm:grid-cols-3 gap-6">
+          <div class="channel-card p-8">
+            <div class="icon-badge" style="background:var(--signal-glow); border-color:rgba(31,175,156,.3);">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a8 8 0 00-6.93 12.02L2 18l4.1-1.05A8 8 0 1010 2z" stroke="#1FAF9C" stroke-width="1.4"/><path d="M6.8 6.8c.2-.5.6-.5.9-.5h.4c.2 0 .4 0 .5.3.2.4.6 1.4.6 1.5.1.2 0 .3-.1.5l-.4.4c-.1.2-.2.3 0 .6.2.3.7 1.1 1.5 1.7.9.7 1.4.9 1.7 1 .2.1.4.1.5-.1l.5-.6c.2-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.4 0 .2 0 .8-.3 1.2-.3.4-1.2.9-1.9.9-.6 0-2-.3-3.6-1.7-1.9-1.6-2.5-3-2.6-3.2-.1-.3-.7-1-.7-1.9 0-.9.5-1.3.7-1.6z" fill="#1FAF9C"/></svg>
+            </div>
+            <p class="font-mono text-[11px] uppercase tracking-wider text-signal mt-5">WhatsApp</p>
+            <h3 class="font-display mt-2 text-lg font-semibold">Business API messaging</h3>
+            <p class="mt-3 text-sm text-mid leading-relaxed">
+              Connect your WhatsApp numbers, send templates and session replies, and watch
+              delivery move from sent to read — built on Meta's Cloud API.
+            </p>
+          </div>
+
+          <div class="channel-card p-8">
+            <div class="icon-badge" style="background:var(--mail-glow); border-color:rgba(255,176,32,.3);">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="12" rx="2" stroke="#FFB020" stroke-width="1.4"/><path d="M3 5.5l7 5.5 7-5.5" stroke="#FFB020" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <p class="font-mono text-[11px] uppercase tracking-wider text-mail mt-5">Email</p>
+            <h3 class="font-display mt-2 text-lg font-semibold">Transactional sending</h3>
+            <p class="mt-3 text-sm text-mid leading-relaxed">
+              Verify a sending domain with DKIM in one click and send through a simple API.
+              Deliverability is handled; every send is logged.
+            </p>
+          </div>
+
+          <div class="channel-card p-8">
+            <div class="icon-badge" style="background:var(--rules-glow); border-color:rgba(94,139,217,.3);">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="5" cy="5" r="2" stroke="#5E8BD9" stroke-width="1.4"/><circle cx="15" cy="15" r="2" stroke="#5E8BD9" stroke-width="1.4"/><circle cx="15" cy="5" r="2" stroke="#5E8BD9" stroke-width="1.4"/><path d="M7 5h6M15 7v6M9.5 6.5L13.5 13.5" stroke="#5E8BD9" stroke-width="1.4"/></svg>
+            </div>
+            <p class="font-mono text-[11px] uppercase tracking-wider text-rules mt-5">Rules</p>
+            <h3 class="font-display mt-2 text-lg font-semibold">Automation &amp; routing</h3>
+            <p class="mt-3 text-sm text-mid leading-relaxed">
+              Auto-reply and route incoming messages by keyword or hours, with an optional
+              Bitrix24 CRM sync as an add-on.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="max-w-6xl mx-auto px-6 py-20 sm:py-24">
+      <div class="text-center mb-8">
+        <p class="font-mono text-xs uppercase tracking-wider text-lo">Pricing</p>
+        <h2 class="font-display mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">Usage-based, no surprises</h2>
+        <p class="mt-2 text-sm text-mid">Start on a free trial. Upgrade when you outgrow it.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+        {% for plan in plans %}
+          <div class="plan-card {% if plan.slug == 'professional' %}featured lg:-translate-y-2{% endif %} p-8 flex flex-col">
+            {% if plan.slug == 'professional' %}
+              <span class="font-mono text-[10px] font-medium uppercase tracking-wider text-signal mb-3 inline-flex items-center gap-1.5">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="#1FAF9C"><path d="M5 0l1.3 3.2L10 4l-3.2 1.3L5 10 3.7 6.7 0 5.4l3.7-1.3z"/></svg>
+                Most popular
+              </span>
+            {% endif %}
+            <p class="font-display font-semibold text-lg">{{ plan.name }}</p>
+            <div class="mt-2 flex items-end gap-1">
+              <span class="font-display text-4xl font-semibold tracking-tight">${{ plan.price_monthly|floatformat:0 }}</span>
+              {% if plan.price_monthly > 0 %}<span class="text-sm text-lo mb-1">/mo</span>{% endif %}
+            </div>
+
+            <div class="mt-6 flex-1 font-mono text-[13px] text-mid">
+              <div class="spec-row flex justify-between"><span>WhatsApp</span><span class="text-white">{% if plan.max_whatsapp_numbers == -1 %}Unlimited{% else %}{{ plan.max_whatsapp_numbers }}{% endif %} number{{ plan.max_whatsapp_numbers|pluralize }}</span></div>
+              <div class="spec-row flex justify-between"><span>Conversations</span><span class="text-white">{% if plan.max_conversations_per_month == -1 %}Unlimited{% else %}{{ plan.max_conversations_per_month }}{% endif %}/mo</span></div>
+              <div class="spec-row flex justify-between"><span>Emails</span><span class="text-white">{% if plan.max_emails_per_month == -1 %}Unlimited{% else %}{{ plan.max_emails_per_month }}{% endif %}/mo</span></div>
+              {% if plan.has_priority_support %}<div class="spec-row flex justify-between"><span>Support</span><span class="text-white">Priority</span></div>{% endif %}
+            </div>
+
+            <a href="/signup/" class="mt-8 block text-center {% if plan.slug == 'professional' %}bg-signal text-[#12182B] hover:opacity-90{% else %}bg-white/5 text-white border border-hairline hover:border-white/40 hover:bg-white/[.08]{% endif %} text-sm font-semibold py-3 rounded-xl">
+              {% if plan.slug == 'trial' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
+            </a>
+            <p class="mt-3 text-center font-mono text-[11px] text-lo">
+              {% if plan.slug == 'trial' %}No card required{% else %}Billed monthly · cancel anytime{% endif %}
+            </p>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="border-t border-hairline relative overflow-hidden">
+      <div class="ambient" aria-hidden="true" style="opacity:.6;"><span class="g1" style="width:360px;height:360px;top:-140px;left:10%;"></span></div>
+      <div class="relative z-10 max-w-6xl mx-auto px-6 py-16 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div>
+          <h2 class="font-display text-2xl sm:text-3xl font-semibold tracking-tight">Ready to start sending?</h2>
+          <p class="mt-2 text-mid text-sm">Create your workspace and connect a channel in minutes.</p>
+        </div>
+        <a href="/signup/" class="bg-signal text-[#12182B] text-sm font-semibold px-6 py-4 rounded-xl hover:opacity-90 hover:-translate-y-0.5 shadow-[0_20px_50px_-20px_rgba(31,175,156,.55)] whitespace-nowrap">
+          Create your account
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-hairline">
+    <div class="max-w-6xl mx-auto px-6 py-8 text-center font-mono text-xs text-lo">
+      © Akilent · Digital Communications &amp; Automation Platform
     </div>
   </footer>
 

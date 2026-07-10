@@ -7,11 +7,11 @@ a small launcher so it stays available without getting in the way.{% endcomment 
 
   {# Collapsed launcher #}
   <button type="button" x-show="!open" @click="set(true)"
-          class="flex items-center gap-2 rounded-full bg-brand-600 hover:bg-brand-700 text-white
-                 pl-4 pr-3 py-2.5 shadow-pop text-sm font-medium">
+          class="flex items-center gap-2 rounded-full bg-amber-400 hover:bg-amber-500 text-ink
+                 pl-4 pr-3 py-2.5 shadow-pop text-sm font-semibold">
     {% include "components/icon.html" with name="sparkles" class="w-4 h-4" %}
     <span>Finish setup</span>
-    <span class="inline-flex items-center justify-center h-5 px-2 rounded-full bg-white/20 text-xs">
+    <span class="inline-flex items-center justify-center h-5 px-2 rounded-full bg-ink/10 text-xs">
       {{ onboarding.required_done }}/{{ onboarding.required_total }}
     </span>
   </button>

@@ -1,7 +1,60 @@
-automator is a multi-tenant email-automation SaaS (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI). The core product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp and Bitrix verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
+# Akilent
 
-Goal of this work: close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp/Bitrix stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
+Akilent is a digital communications and automation platform that enables businesses to engage customers through the official WhatsApp Business API and reliable transactional email services. It provides developers and business teams with the tools they need to automate customer communications, streamline notifications, and build messaging workflows from a single platform.
 
+## Core Services
+
+**WhatsApp Business API Integration**
+- Official WhatsApp Business API access
+- Send transactional and customer service messages
+- Two-way customer conversations
+- Template message management
+- Media messaging (images, documents, videos, etc.)
+- Webhook support for real-time message events
+
+**Transactional Email**
+- High-deliverability email sending
+- OTP and verification emails
+- Password reset emails
+- Order confirmations, invoices, and receipts
+- Delivery status notifications
+- System alerts and other automated emails
+
+**Communication Automation**
+- Event-triggered messaging
+- Automated customer notifications
+- Workflow automation
+- Scheduling and queue management
+- API-driven communication processes
+
+**Developer APIs**
+- RESTful APIs for WhatsApp and email
+- SDKs and integration support
+- Webhooks for delivery and status callbacks
+- API authentication and secure access
+- Comprehensive documentation for rapid integration
+
+**Team Collaboration**
+- Shared communication platform for support and operations teams
+- Role-based access for team members
+- Centralized message management
+- Conversation history and activity tracking
+
+**Message Analytics**
+- Delivery reports and message status tracking
+- Email delivery metrics
+- Usage statistics
+- Communication performance insights
+
+## Implementation
+
+This repository (`automator`) is a multi-tenant email-automation SaaS platform (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI) that implements the Akilent core services. The product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp and Bitrix verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
+
+**Current Focus**: Close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp/Bitrix stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
+
+
+# PRODUCTION
+  `docker compose --profile prod up`
 
 
 **FIELD_ENCRYPTION_KEY** ***set or the app will raise an error on startup. Generate one with:***    

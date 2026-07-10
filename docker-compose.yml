@@ -1,4 +1,18 @@
+
 services:
+  web:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: sh /app/docker/entrypoint.sh
+    depends_on:
+      - db
+  
+  
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -27,24 +41,11 @@ services:
       - "5672:5672"
       - "15672:15672"   # management UI
 
-  web:
-    build: .
-    command: sh /app/docker/entrypoint.sh
-    restart: unless-stopped
-    volumes:
-      - .:/app
-    expose:
-      - "8000"          # no longer published to host directly; nginx fronts it
-    env_file:
-      - .env
-    depends_on:
-      - db
-      - redis
-      - rabbitmq
 
   nginx:
     image: nginx:latest
     restart: unless-stopped
+    profiles: ["prod"]
     ports:
       - "80:80"
       - "443:443"

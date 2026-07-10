@@ -7,39 +7,140 @@
 @source "../static/js";
 
 /* ---------------------------------------------------------------------------
-   Design tokens
-   Tailwind v4 keeps its default palette/scales; we ADD brand + semantic tokens
-   and a self-hosted font. Everything below is consumable as utilities
-   (bg-brand-600, rounded-xl, shadow-card …) and as CSS variables.
+   Design tokens — Akilent brand color system (see docs/brand-colors.md)
+   Overrides Tailwind's gray/green/red/amber/blue ramps with brand-tinted
+   equivalents so every existing utility migrates from this one file.
+   Everything below is consumable as utilities (bg-brand-600, shadow-card …)
+   and as CSS variables.
 --------------------------------------------------------------------------- */
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
-  /* Brand ramp (primary). Aligned to a refined blue for cohesion. */
-  --color-brand-50: #eff5ff;
-  --color-brand-100: #dbe8fe;
-  --color-brand-200: #bfd7fe;
-  --color-brand-300: #93bbfd;
-  --color-brand-400: #609afa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
-  --color-brand-950: #172554;
+  /* Brand ramp (primary) — Night Ops Navy. Anchor: brand-950 #0E1526. */
+  --color-brand-50: #F0F4FA;
+  --color-brand-100: #DEE7F2;
+  --color-brand-200: #C3D2E6;
+  --color-brand-300: #9BB2D1;
+  --color-brand-400: #6E8AB4;
+  --color-brand-500: #4C6A99;
+  --color-brand-600: #35517D;
+  --color-brand-700: #263E63;
+  --color-brand-800: #1A2C4A;
+  --color-brand-900: #131F36;
+  --color-brand-950: #0E1526;
 
-  /* Semantic surface/border/text tokens (light theme). */
+  /* Neutral scale — overrides Tailwind gray-* with navy-tinted neutrals.
+     gray-600 is the AA floor for meaningful text on white. */
+  --color-gray-50: #FAFBFC;
+  --color-gray-100: #F3F5F7;
+  --color-gray-200: #E8EDF3;
+  --color-gray-300: #DCE1E8;
+  --color-gray-400: #A8B2C4;
+  --color-gray-500: #838EA3;
+  --color-gray-600: #657089;
+  --color-gray-700: #46516B;
+  --color-gray-800: #26314A;
+  --color-gray-900: #161F35;
+  --color-gray-950: #0E1526;
+
+  /* Transmit Teal — WhatsApp channel + success. Anchor: teal-500 #1FAF9C.
+     teal-500 fails AA under white text; use teal-700+ behind white. */
+  --color-teal-50: #EDFAF7;
+  --color-teal-100: #D3F3EC;
+  --color-teal-200: #A9E7DB;
+  --color-teal-300: #74D4C4;
+  --color-teal-400: #43BFAC;
+  --color-teal-500: #1FAF9C;
+  --color-teal-600: #178F80;
+  --color-teal-700: #12766A;
+  --color-teal-800: #115E55;
+  --color-teal-900: #114D47;
+  --color-teal-950: #062E2A;
+
+  /* green-* mirrors teal so existing success greens migrate. */
+  --color-green-50: #EDFAF7;
+  --color-green-100: #D3F3EC;
+  --color-green-200: #A9E7DB;
+  --color-green-300: #74D4C4;
+  --color-green-400: #43BFAC;
+  --color-green-500: #1FAF9C;
+  --color-green-600: #178F80;
+  --color-green-700: #12766A;
+  --color-green-800: #115E55;
+  --color-green-900: #114D47;
+  --color-green-950: #062E2A;
+
+  /* Signal Amber — email channel + primary CTAs. Anchor: amber-400 #FFB020.
+     Never pair amber fills with white text; use ink. */
+  --color-amber-50: #FFF8EB;
+  --color-amber-100: #FEEEC7;
+  --color-amber-200: #FDDE8A;
+  --color-amber-300: #FFCA4D;
+  --color-amber-400: #FFB020;
+  --color-amber-500: #F5A312;
+  --color-amber-600: #E0930A;
+  --color-amber-700: #B26F06;
+  --color-amber-800: #8C5508;
+  --color-amber-900: #74450C;
+  --color-amber-950: #452605;
+
+  /* Alert Coral — errors/destructive only, never decorative.
+     Anchor: coral-500 #E8604A; white text needs coral-600+. */
+  --color-coral-50: #FDF1EF;
+  --color-coral-100: #FBDED9;
+  --color-coral-200: #F7BFB5;
+  --color-coral-300: #F1957F;
+  --color-coral-400: #EF8069;
+  --color-coral-500: #E8604A;
+  --color-coral-600: #CC4530;
+  --color-coral-700: #A93A28;
+  --color-coral-800: #8B3324;
+  --color-coral-900: #732E22;
+  --color-coral-950: #3F150D;
+
+  /* red-* mirrors coral so existing error reds migrate. */
+  --color-red-50: #FDF1EF;
+  --color-red-100: #FBDED9;
+  --color-red-200: #F7BFB5;
+  --color-red-300: #F1957F;
+  --color-red-400: #EF8069;
+  --color-red-500: #E8604A;
+  --color-red-600: #CC4530;
+  --color-red-700: #A93A28;
+  --color-red-800: #8B3324;
+  --color-red-900: #732E22;
+  --color-red-950: #3F150D;
+
+  /* Info blue — professional, non-brand (informational states only). */
+  --color-blue-50: #EFF4FB;
+  --color-blue-100: #DEE9F7;
+  --color-blue-200: #BFD3EF;
+  --color-blue-300: #94B4E3;
+  --color-blue-400: #5E8BD9;
+  --color-blue-500: #3D6ECC;
+  --color-blue-600: #2F58AB;
+  --color-blue-700: #274687;
+  --color-blue-800: #223A6B;
+  --color-blue-900: #1D2F52;
+  --color-blue-950: #131E36;
+
+  /* Semantic aliases. */
+  --color-ink: #12182B;
+  --color-whatsapp: #1FAF9C;
+  --color-email: #FFB020;
+
+  /* Semantic surface/border/text tokens (light theme). Canvas = Paper. */
   --color-surface: #ffffff;
-  --color-surface-muted: #f9fafb;
-  --color-canvas: #f6f7f9;
-  --color-border: #e5e7eb;
-  --color-border-strong: #d1d5db;
+  --color-surface-muted: #FAFBFC;
+  --color-canvas: #F3F5F7;
+  --color-border: #E8EDF3;
+  --color-border-strong: #DCE1E8;
 
-  /* Elevation. */
-  --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
-  --shadow-pop: 0 4px 6px -2px rgb(16 24 40 / 0.05), 0 12px 16px -4px rgb(16 24 40 / 0.1);
-  --shadow-modal: 0 8px 8px -4px rgb(16 24 40 / 0.04), 0 20px 24px -4px rgb(16 24 40 / 0.12);
+  /* Elevation (navy-tinted). */
+  --shadow-card: 0 1px 2px 0 rgb(14 21 38 / 0.04), 0 1px 3px 0 rgb(14 21 38 / 0.06);
+  --shadow-pop: 0 4px 6px -2px rgb(14 21 38 / 0.05), 0 12px 16px -4px rgb(14 21 38 / 0.1);
+  --shadow-modal: 0 8px 8px -4px rgb(14 21 38 / 0.04), 0 20px 24px -4px rgb(14 21 38 / 0.12);
 
   /* Z-index layers. */
   --z-dropdown: 1000;
@@ -72,7 +173,7 @@
   body {
     font-family: var(--font-sans);
     background-color: var(--color-canvas);
-    color: var(--color-gray-900);
+    color: var(--color-ink);
   }
   /* Visible, consistent focus ring for keyboard users (WCAG 2.2). */
   :focus-visible {
@@ -96,10 +197,10 @@
   .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
   .btn-lg { @apply px-5 py-3 text-base; }
   .btn-block { @apply w-full; }
-  .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800; }
+  .btn-primary { @apply bg-amber-400 text-ink font-semibold hover:bg-amber-500 active:bg-amber-600; }
   .btn-secondary { @apply bg-white text-gray-700 border border-border-strong hover:bg-gray-50; }
   .btn-ghost { @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900; }
-  .btn-danger { @apply bg-red-600 text-white hover:bg-red-700 active:bg-red-800; }
+  .btn-danger { @apply bg-red-600 text-white hover:bg-red-700 active:bg-red-800; } /* red-600 = coral #CC4530, AA with white */
   .btn-danger-ghost { @apply text-red-600 hover:bg-red-50; }
 
   /* Surfaces ------------------------------------------------------------ */
@@ -113,7 +214,7 @@
   }
   .badge-neutral { @apply bg-gray-100 text-gray-600; }
   .badge-brand { @apply bg-brand-50 text-brand-700; }
-  .badge-success { @apply bg-green-50 text-green-700; }
+  .badge-success { @apply bg-green-50 text-green-800; }
   .badge-warning { @apply bg-amber-50 text-amber-700; }
   .badge-danger { @apply bg-red-50 text-red-700; }
   .badge-info { @apply bg-blue-50 text-blue-700; }
