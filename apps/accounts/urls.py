@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.landing, name="landing"),
     path("signup/", views.signup, name="signup"),
     path("verify/<uidb64>/<token>/", views.verify_email, name="verify_email"),
+    path("resend-verification/", views.resend_verification, name="resend-verification"),
     path("onboarding/", views.onboarding, name="onboarding"),
     path("dashboard/", views.dashboard, name="dashboard"),
 

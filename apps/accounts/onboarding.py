@@ -16,6 +16,16 @@ def get_state(account) -> dict:
     has_verified = EmailDomain.objects.filter(
         account=account, status=EmailDomain.Status.VERIFIED
     ).exists()
+    # Deep-link straight to the unverified domain's DNS-check panel instead of
+    # just the bare list, so the "verify" step doesn't dump the user back at
+    # square one.
+    pending_domain = (
+        EmailDomain.objects.filter(account=account)
+        .exclude(status=EmailDomain.Status.VERIFIED)
+        .order_by("pk")
+        .first()
+    )
+    verify_url = f"/email/domains/#domain-card-{pending_domain.pk}" if pending_domain else "/email/domains/"
     has_mailbox = Mailbox.objects.filter(account=account).exists()
     has_key = EmailApiKey.objects.filter(account=account, is_active=True).exists()
     has_team = (
@@ -53,7 +63,7 @@ def get_state(account) -> dict:
         {
             "key": "verify", "title": "Verify your domain",
             "desc": "Add the DNS records and run the DNS check to switch sending on.",
-            "done": has_verified, "url": "/email/domains/", "cta": "Verify DNS",
+            "done": has_verified, "url": verify_url, "cta": "Verify DNS",
             "icon": "check-circle", "optional": False,
         },
         {

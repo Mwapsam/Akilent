@@ -283,7 +283,7 @@ def accept_invitation(request, token):
                 )
                 invite.accepted_at = timezone.now()
                 invite.save(update_fields=["accepted_at"])
-            login(request, user)
+            login(request, user, backend="apps.accounts.backends.EmailBackend")
             set_current_account(request, invite.account)
             messages.success(request, f"Welcome to {invite.account.company_name}!")
             return redirect("dashboard")

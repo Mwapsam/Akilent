@@ -17,6 +17,11 @@
         Click it to activate your account and sign in. It may take a few minutes
         to arrive — be sure to check your spam folder.
       </p>
+      <form method="post" action="{% url 'resend-verification' %}" class="mt-5">
+        {% csrf_token %}
+        <input type="hidden" name="email" value="{{ email }}">
+        <button type="submit" class="btn btn-secondary btn-block">Resend confirmation link</button>
+      </form>
     </div>
 
     <p class="text-center text-xs text-gray-400 mt-6">

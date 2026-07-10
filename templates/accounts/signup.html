@@ -1,21 +1,20 @@
-{% load static %}<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Create your account</title>
-  <link rel="stylesheet" href="{% static 'css/app.css' %}">
-</head>
-<body class="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+{% extends "base.html" %}
+{% block title %}Create your account — {{ site.app_name|default:"Automator" }}{% endblock %}
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
+      <div class="inline-flex mb-4">
+        {% include "components/brand_mark.html" with class="w-12 h-12" %}
+      </div>
       <h1 class="text-xl font-semibold text-gray-900">Create your account</h1>
-      <p class="text-sm text-gray-400 mt-1">Start sending WhatsApp & email</p>
+      <p class="text-sm text-gray-400 mt-1">Set up your workspace to start sending email</p>
     </div>
 
-    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
+    <div class="card card-pad sm:!p-8">
       {% if form.non_field_errors %}
-        <div class="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+        <div class="mb-5 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          {% include "components/icon.html" with name="alert" class="w-4 h-4 text-red-500 shrink-0 mt-0.5" %}
           <p class="text-sm text-red-700">{{ form.non_field_errors|join:" " }}</p>
         </div>
       {% endif %}
@@ -23,33 +22,44 @@
       <form method="post" novalidate class="space-y-4">
         {% csrf_token %}
         {% for field in form %}
-          <div>
-            <label for="{{ field.id_for_label }}" class="block text-xs font-medium text-gray-600 mb-1.5">
-              {{ field.label }}
-            </label>
-            <input id="{{ field.id_for_label }}"
-                   type="{% if 'password' in field.name %}password{% elif field.name == 'email' %}email{% else %}text{% endif %}"
-                   name="{{ field.name }}"
-                   value="{{ field.value|default:'' }}"
-                   class="w-full border {% if field.errors %}border-red-400 bg-red-50{% else %}border-gray-300{% endif %} rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {% if field.errors %}
-              <p class="text-xs text-red-600 mt-1">{{ field.errors|join:" " }}</p>
-            {% elif field.help_text %}
-              <p class="text-xs text-gray-400 mt-1">{{ field.help_text|safe }}</p>
-            {% endif %}
-          </div>
+          {% if field.is_hidden %}
+            {{ field }}
+          {% else %}
+            <div>
+              <label for="{{ field.id_for_label }}" class="label">
+                {{ field.label }}
+              </label>
+              {% if 'password' in field.name %}
+                {% include "components/password_field.html" with id=field.id_for_label name=field.name value=field.value autocomplete="new-password" autofocus=forloop.first error=field.errors %}
+              {% else %}
+                <input id="{{ field.id_for_label }}"
+                       type="{% if field.name == 'email' %}email{% else %}text{% endif %}"
+                       name="{{ field.name }}"
+                       value="{{ field.value|default:'' }}"
+                       autocomplete="{% if field.name == 'email' %}email{% elif field.name == 'username' %}username{% else %}off{% endif %}"
+                       {% if forloop.first %}autofocus{% endif %}
+                       class="input{% if field.errors %} input-error{% endif %}">
+              {% endif %}
+              {% if field.errors %}
+                <p class="field-error">{{ field.errors|join:" " }}</p>
+              {% elif field.help_text %}
+                <div class="text-xs text-gray-400 mt-1 [&>ul]:list-disc [&>ul]:pl-4 [&>ul]:space-y-0.5 [&>ul]:mt-1">{{ field.help_text|safe }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
         {% endfor %}
 
-        <button type="submit"
-                class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-xl">
+        <button type="submit" class="btn btn-primary btn-block mt-2">
           Create account
         </button>
       </form>
     </div>
 
     <p class="text-center text-xs text-gray-400 mt-6">
-      Already have an account? <a href="/auth/login/" class="text-blue-600">Sign in</a>
+      Already have an account? <a href="{% url 'login' %}" class="text-brand-600 hover:text-brand-700">Sign in</a>
+      &middot;
+      <a href="{% url 'resend-verification' %}" class="text-brand-600 hover:text-brand-700">Resend confirmation link</a>
     </p>
   </div>
-</body>
-</html>
+</div>
+{% endblock %}

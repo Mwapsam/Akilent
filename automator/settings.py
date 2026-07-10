@@ -105,6 +105,13 @@ LOGOUT_REDIRECT_URL = "/auth/login/"
 
 # --- Auth ---
 
+# Email is the login credential; ModelBackend stays as a fallback (Django
+# admin and any username-based auth keep working unchanged).
+AUTHENTICATION_BACKENDS = [
+    "apps.accounts.backends.EmailBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},

@@ -257,6 +257,16 @@
 
   <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:top-3 focus:left-3 focus:bg-[#FFB020] focus:text-[#12182B] focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-semibold">Skip to content</a>
 
+  {% if messages %}
+    <div class="relative z-40 max-w-6xl mx-auto px-6 pt-4">
+      {% for message in messages %}
+        <div class="rounded-xl border border-[#FFB020]/40 bg-[#2A2010] text-[#FFD98A] text-sm px-4 py-3">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   <!-- 1 · Product navigation header -->
   <header class="border-b border-hairline sticky top-0 z-30 bg-ink/90 backdrop-blur-md">
     <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
@@ -584,7 +594,7 @@
                 {% if plan.has_priority_support %}<div class="spec-row flex justify-between"><span>Support</span><span class="text-[#12182B] font-medium">Priority</span></div>{% endif %}
               </div>
 
-              <a href="/signup/" class="mt-8 block text-center text-sm font-semibold py-3 rounded-[10px] {% if plan.slug == 'professional' %}cta-primary{% else %}cta-outline-light{% endif %}">
+              <a href="/signup/?plan={{ plan.slug }}" class="mt-8 block text-center text-sm font-semibold py-3 rounded-[10px] {% if plan.slug == 'professional' %}cta-primary{% else %}cta-outline-light{% endif %}">
                 {% if plan.slug == 'trial' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
               </a>
               <p class="mt-3 text-center font-mono text-[11px] text-[#657089]">

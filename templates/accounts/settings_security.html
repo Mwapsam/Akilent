@@ -17,11 +17,13 @@
     {% for field in form %}
       <div>
         <label for="{{ field.id_for_label }}" class="label">{{ field.label }}</label>
-        <input id="{{ field.id_for_label }}" type="password" name="{{ field.name }}"
-               autocomplete="{% if field.name == 'old_password' %}current-password{% else %}new-password{% endif %}"
-               class="input{% if field.errors %} input-error{% endif %}">
+        {% if field.name == "old_password" %}
+          {% include "components/password_field.html" with id=field.id_for_label name=field.name autocomplete="current-password" error=field.errors %}
+        {% else %}
+          {% include "components/password_field.html" with id=field.id_for_label name=field.name autocomplete="new-password" error=field.errors %}
+        {% endif %}
         {% if field.errors %}<p class="field-error">{{ field.errors|join:" " }}</p>
-        {% elif field.help_text %}<p class="help">{{ field.help_text|safe }}</p>{% endif %}
+        {% elif field.help_text %}<div class="help [&>ul]:list-disc [&>ul]:pl-4 [&>ul]:space-y-0.5">{{ field.help_text|safe }}</div>{% endif %}
       </div>
     {% endfor %}
     <button class="btn btn-primary" type="submit">Update password</button>

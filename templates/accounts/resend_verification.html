@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Resend confirmation email — {{ site.app_name|default:"Automator" }}{% endblock %}
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="inline-flex mb-4">
+        {% include "components/brand_mark.html" with class="w-12 h-12" %}
+      </div>
+      <h1 class="text-xl font-semibold text-gray-900">Resend confirmation email</h1>
+      <p class="text-sm text-gray-400 mt-1">Enter the email you signed up with and we'll send a fresh link.</p>
+    </div>
+
+    <div class="card card-pad sm:!p-8">
+      <form method="post" novalidate class="space-y-4">
+        {% csrf_token %}
+        <div>
+          <label for="id_email" class="label">Email</label>
+          <input id="id_email" type="email" name="email" value="{{ email }}" required autofocus
+                 autocomplete="email" class="input">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Resend confirmation link</button>
+      </form>
+    </div>
+
+    <p class="text-center text-xs text-gray-400 mt-6">
+      <a href="{% url 'login' %}" class="text-brand-600 hover:text-brand-700">Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

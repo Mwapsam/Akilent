@@ -1,5 +1,7 @@
 import logging
+from datetime import timedelta
 
+from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -9,6 +11,7 @@ from django.db import transaction
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
@@ -55,9 +58,8 @@ def signup(request):
 
     from apps.core.models import SiteSettings
     if not SiteSettings.load().signups_enabled:
-        from django.contrib import messages
-        messages.error(request, "Public sign-ups are currently disabled.")
-        return redirect("login")
+        messages.error(request, "Public sign-ups are currently disabled. Contact us if you need access.")
+        return redirect(f"{reverse('landing')}#pricing")
 
     if request.method == "POST":
         form = SignupForm(request.POST)
@@ -65,6 +67,9 @@ def signup(request):
             with transaction.atomic():
                 user = form.save(commit=False)
                 user.email = form.cleaned_data["email"]
+                # Email is the login credential (EmailBackend); username is
+                # just an internal identifier Django's User model requires.
+                user.username = form.cleaned_data["email"][:150]
                 user.is_active = False
                 user.save()
 
@@ -74,6 +79,7 @@ def signup(request):
                 Membership.objects.create(
                     user=user, account=account, role=Membership.Role.OWNER
                 )
+                _apply_selected_plan(account, form.cleaned_data.get("plan"))
 
             _send_verification_email(request, user)
             logger.info(
@@ -81,9 +87,36 @@ def signup(request):
             )
             return render(request, "accounts/verify_email_sent.html", {"email": user.email})
     else:
-        form = SignupForm()
+        form = SignupForm(initial={"plan": request.GET.get("plan", "")})
 
     return render(request, "accounts/signup.html", {"form": form})
+
+
+def _apply_selected_plan(account, plan_slug):
+    """Honor the plan chosen on the landing page's pricing cards, if any.
+
+    The trial Subscription is auto-created by the billing post_save signal;
+    this just swaps its plan so a "Choose Professional" click doesn't
+    silently land the user on the default/trial plan instead.
+    """
+    if not plan_slug:
+        return
+    from apps.billing.models import Plan
+
+    plan = Plan.objects.filter(slug=plan_slug, is_active=True).first()
+    if plan is None:
+        return
+    subscription = getattr(account, "subscription", None)
+    if subscription is None:
+        return
+    subscription.plan = plan
+    if plan.trial_days:
+        subscription.trial_ends_at = timezone.now() + timedelta(days=plan.trial_days)
+        subscription.status = subscription.__class__.TRIALING
+    else:
+        subscription.trial_ends_at = None
+        subscription.status = subscription.__class__.ACTIVE
+    subscription.save(update_fields=["plan", "trial_ends_at", "status"])
 
 
 def verify_email(request, uidb64, token):
@@ -104,7 +137,7 @@ def verify_email(request, uidb64, token):
     if user is not None and default_token_generator.check_token(user, token):
         user.is_active = True
         user.save(update_fields=["is_active"])
-        login(request, user)
+        login(request, user, backend="apps.accounts.backends.EmailBackend")
         membership = Membership.objects.filter(user=user).select_related("account").first()
         if membership is not None:
             set_current_account(request, membership.account)
@@ -112,6 +145,33 @@ def verify_email(request, uidb64, token):
         return redirect("onboarding")
 
     return render(request, "accounts/verify_email_invalid.html", status=400)
+
+
+def resend_verification(request):
+    """Let a user request a fresh verification link if the first one was lost or expired.
+
+    Avoids confirming/denying account existence to a third party by always
+    showing the same "check your email" outcome for a not-found or already
+    inactive account; an already-active account is sent straight to sign in
+    since that's more helpful than a silent no-op.
+    """
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        user = User.objects.filter(email__iexact=email).first()
+        if user is not None and user.is_active:
+            messages.info(request, "That account is already verified — sign in below.")
+            return redirect("login")
+        if user is not None and not user.is_active:
+            _send_verification_email(request, user)
+            logger.info("resend_verification: resent link to user %s", user.pk)
+        return render(request, "accounts/verify_email_sent.html", {"email": email})
+
+    return render(request, "accounts/resend_verification.html", {
+        "email": request.GET.get("email", ""),
+    })
 
 
 def landing(request):

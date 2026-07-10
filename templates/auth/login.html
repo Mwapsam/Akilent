@@ -23,9 +23,9 @@
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next }}">
         <div>
-          <label for="id_username" class="label">Username</label>
-          <input id="id_username" type="text" name="username" value="{{ form.username.value|default:'' }}"
-                 autocomplete="username" autofocus
+          <label for="id_username" class="label">Email</label>
+          <input id="id_username" type="email" name="username" value="{{ form.username.value|default:'' }}"
+                 autocomplete="email" autofocus
                  class="input{% if form.username.errors %} input-error{% endif %}">
           {% if form.username.errors %}<p class="field-error">{{ form.username.errors|join:" " }}</p>{% endif %}
         </div>
@@ -34,15 +34,18 @@
             <label for="id_password" class="label">Password</label>
             <a href="{% url 'password_reset' %}" class="text-xs text-brand-600 hover:text-brand-700">Forgot password?</a>
           </div>
-          <input id="id_password" type="password" name="password" autocomplete="current-password"
-                 class="input{% if form.password.errors %} input-error{% endif %}">
+          {% include "components/password_field.html" with id="id_password" name="password" autocomplete="current-password" error=form.password.errors %}
           {% if form.password.errors %}<p class="field-error">{{ form.password.errors|join:" " }}</p>{% endif %}
         </div>
         <button type="submit" class="btn btn-primary btn-block mt-2">Sign in</button>
       </form>
     </div>
 
-    <p class="text-center text-xs text-gray-400 mt-6">Access is restricted to staff accounts.</p>
+    <p class="text-center text-xs text-gray-400 mt-6">
+      New here? <a href="{% url 'signup' %}" class="text-brand-600 hover:text-brand-700">Create an account</a>
+      &middot;
+      <a href="{% url 'resend-verification' %}" class="text-brand-600 hover:text-brand-700">Resend confirmation link</a>
+    </p>
   </div>
 </div>
 {% endblock %}
