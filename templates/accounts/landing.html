@@ -67,6 +67,7 @@
       border-radius:6px;
     }
     .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    nav[aria-label="Primary"] a.active{ color:var(--text-hi); }
 
     /* Buttons */
     .cta-primary{
@@ -264,7 +265,7 @@
         Akilent
       </a>
 
-      <nav class="hidden lg:flex items-center gap-7 text-[13px] font-medium" aria-label="Primary">
+      <nav class="hidden md:flex items-center gap-7 text-[13px] font-medium" aria-label="Primary">
         <a href="#platform" class="text-mid hover:text-white">Platform</a>
         <a href="#channels" class="text-mid hover:text-white">Channels</a>
         <a href="#automations" class="text-mid hover:text-white">Automations</a>
@@ -273,7 +274,7 @@
         <a href="{% url 'help' %}" class="text-mid hover:text-white">Documentation</a>
       </nav>
 
-      <div class="hidden lg:flex items-center gap-3 text-sm shrink-0">
+      <div class="hidden md:flex items-center gap-3 text-sm shrink-0">
         {% if user.is_authenticated %}
           <a href="/dashboard/" class="cta-primary px-4 py-2 text-sm">Open console</a>
         {% else %}
@@ -282,15 +283,15 @@
         {% endif %}
       </div>
 
-      <input type="checkbox" id="mobile-toggle" class="sr-only">
-      <label for="mobile-toggle" class="lg:hidden burger-box relative w-9 h-9 -mr-1.5 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu" aria-controls="mobile-panel">
+      <input type="checkbox" id="mobile-toggle" class="sr-only" onchange="this.nextElementSibling.setAttribute('aria-expanded', this.checked)">
+      <label for="mobile-toggle" class="md:hidden burger-box relative w-11 h-11 -mr-1 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu" aria-controls="mobile-panel" aria-expanded="false">
         <span class="burger-line l1 block w-5 h-[1.5px] bg-white"></span>
         <span class="burger-line l2 block w-5 h-[1.5px] bg-white"></span>
         <span class="burger-line l3 block w-5 h-[1.5px] bg-white"></span>
       </label>
     </div>
 
-    <nav id="mobile-panel" class="lg:hidden border-t border-hairline" aria-label="Mobile">
+    <nav id="mobile-panel" class="md:hidden border-t border-hairline" aria-label="Mobile">
       <div>
         <div class="flex flex-col gap-1 px-6 py-5 text-sm">
           <a href="#platform" class="text-mid hover:text-white py-2">Platform</a>
@@ -528,7 +529,7 @@
     <!-- 7 · Trust / capabilities -->
     <section class="band-light border-y border-[#E8EDF3]">
       <div class="max-w-6xl mx-auto px-6 py-14">
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-8 gap-y-10 text-center">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-8 gap-y-10 text-center">
           <div>
             <p class="font-display text-xl font-semibold">99.9%</p>
             <p class="mt-1 text-xs muted">delivery infrastructure</p>
@@ -545,7 +546,7 @@
             <p class="font-display text-xl font-semibold">Enterprise</p>
             <p class="mt-1 text-xs muted">permissions &amp; roles</p>
           </div>
-          <div class="col-span-2 sm:col-span-1">
+          <div class="col-span-2 md:col-span-3 lg:col-span-1 mx-auto md:max-w-none">
             <p class="font-display text-xl font-semibold">Analytics</p>
             <p class="mt-1 text-xs muted">and reporting</p>
           </div>
@@ -624,5 +625,19 @@
     </div>
   </footer>
 
+  <script>
+    (function(){
+      var links = document.querySelectorAll('nav[aria-label="Primary"] a[href^="#"]');
+      var sections = Array.prototype.map.call(links, function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+      if(!sections.length) return;
+      var observer = new IntersectionObserver(function(entries){
+        entries.forEach(function(entry){
+          if(!entry.isIntersecting) return;
+          links.forEach(function(a){ a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id); });
+        });
+      }, { rootMargin: '-45% 0px -50% 0px' });
+      sections.forEach(function(s){ observer.observe(s); });
+    })();
+  </script>
 </body>
 </html>
