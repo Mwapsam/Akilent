@@ -1,0 +1,189 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ page.title }} — Developer docs — Akilent{% endblock %}</title>
+  <meta name="description" content="{{ page.summary }}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script defer src="{% static 'js/alpine-focus.min.js' %}"></script>
+  <script defer src="{% static 'js/alpine.min.js' %}"></script>
+  <style>
+    :root{
+      --ink:#0E1526; --ink-2:#161F35; --hairline:#26314A; --hairline-strong:rgba(255,255,255,.16);
+      --text-hi:#FAFBFC; --text-mid:#A8B2C4; --text-lo:#838EA3;
+      --signal:#1FAF9C; --mail:#FFB020;
+      --paper:#F3F5F7; --paper-card:#FFFFFF; --paper-border:#E8EDF3; --paper-border-strong:#DCE1E8;
+      --paper-ink:#12182B; --paper-mid:#46516B; --paper-lo:#657089;
+    }
+    *{ box-sizing:border-box; }
+    body{ background:var(--paper); color:var(--paper-ink); font-family:'Inter',ui-sans-serif,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+    .font-display{ font-family:'Space Grotesk',ui-sans-serif,sans-serif; letter-spacing:-0.015em; }
+    .font-mono{ font-family:'JetBrains Mono',ui-monospace,monospace; letter-spacing:.01em; }
+    .bg-ink{ background:var(--ink); }
+    .text-mid{ color:var(--text-mid); }
+    .text-signal{ color:var(--signal); }
+    .border-hairline{ border-color:var(--hairline); }
+    a:focus-visible, button:focus-visible{ outline:2px solid var(--signal); outline-offset:3px; border-radius:6px; }
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .cta-primary{ background:var(--mail); color:#12182B; font-weight:600; border-radius:10px; }
+    .cta-primary:hover{ background:#F5A312; }
+
+    /* Docs nav */
+    .docs-nav a{ display:block; padding:.35rem .6rem; border-radius:8px; font-size:.85rem; color:var(--paper-mid); }
+    .docs-nav a:hover{ color:var(--paper-ink); background:#FFFFFF; }
+    .docs-nav a.active{ color:var(--paper-ink); font-weight:600; background:#FFFFFF; box-shadow:inset 0 0 0 1px var(--paper-border); }
+
+    /* Docs prose */
+    .docs-body{ color:var(--paper-mid); font-size:.95rem; line-height:1.7; }
+    .docs-body > * + *{ margin-top:1rem; }
+    .docs-body h2{ font-size:1.15rem; font-weight:600; color:var(--paper-ink); margin-top:2rem; font-family:'Space Grotesk',sans-serif; }
+    .docs-body h3{ font-size:1rem; font-weight:600; color:var(--paper-ink); margin-top:1.5rem; }
+    .docs-body ul, .docs-body ol{ padding-left:1.25rem; }
+    .docs-body ul{ list-style:disc; }
+    .docs-body ol{ list-style:decimal; }
+    .docs-body li + li{ margin-top:.35rem; }
+    .docs-body a{ color:#2F58AB; text-decoration:underline; text-underline-offset:2px; }
+    .docs-body code{ background:#EEF1F5; border-radius:.375rem; padding:.1rem .35rem; font-size:.85em; font-family:'JetBrains Mono',ui-monospace,monospace; }
+    .docs-body pre{ background:#0B111F; color:#E7ECF5; border-radius:.75rem; padding:1rem 1.1rem; overflow-x:auto; font-size:.82rem; line-height:1.6; }
+    .docs-body pre code{ background:none; padding:0; color:inherit; }
+    .docs-body strong{ color:var(--paper-ink); font-weight:600; }
+    .docs-body table{ width:100%; border-collapse:collapse; font-size:.875rem; }
+    .docs-body th, .docs-body td{ text-align:left; padding:.5rem .75rem; border-bottom:1px solid var(--paper-border); vertical-align:top; }
+    .docs-body th{ color:var(--paper-lo); font-weight:600; }
+    .docs-body .callout{ background:#FFF8E8; border:1px solid #F3DFA6; border-radius:.75rem; padding:.85rem 1rem; }
+    .docs-body .callout p{ margin:0; }
+
+    /* Code sample tabs */
+    .code-tabs{ background:#0B111F; border-radius:.75rem; overflow:hidden; }
+    .code-tabs .tab-bar{ display:flex; gap:.25rem; padding:.5rem .5rem 0; border-bottom:1px solid #1C2640; }
+    .code-tabs button{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem; color:var(--text-lo); padding:.4rem .7rem; border-radius:.5rem .5rem 0 0; }
+    .code-tabs button.active{ color:#FAFBFC; background:#161F35; }
+    .code-tabs pre{ margin:0; border-radius:0; }
+
+    /* Mobile docs nav (no JS) */
+    #docs-mobile-toggle:checked ~ #docs-mobile-panel{ display:block; }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:top-3 focus:left-3 focus:bg-[#FFB020] focus:text-[#12182B] focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-semibold">Skip to content</a>
+
+  <header class="bg-ink border-b border-hairline sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
+      <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5 shrink-0 text-white">
+        <span class="w-2 h-2 rounded-full bg-[#1FAF9C]"></span>
+        Akilent
+      </a>
+
+      <nav class="hidden md:flex items-center gap-7 text-[13px] font-medium" aria-label="Primary">
+        <a href="/#platform" class="text-mid hover:text-white">Platform</a>
+        <a href="/#pricing" class="text-mid hover:text-white">Pricing</a>
+        <a href="{% url 'docs' %}" class="text-white">Documentation</a>
+        <a href="{% url 'help' %}" class="text-mid hover:text-white">Help center</a>
+      </nav>
+
+      <div class="hidden md:flex items-center gap-3 text-sm shrink-0">
+        {% if user.is_authenticated %}
+          <a href="/dashboard/" class="cta-primary px-4 py-2 text-sm">Back to console</a>
+        {% else %}
+          <a href="/auth/login/" class="text-mid hover:text-white font-medium">Sign in</a>
+          <a href="/signup/" class="cta-primary px-4 py-2 text-sm">Create account</a>
+        {% endif %}
+      </div>
+
+      <input type="checkbox" id="docs-mobile-toggle" class="sr-only md:hidden">
+      <label for="docs-mobile-toggle" class="md:hidden w-11 h-11 -mr-1 flex flex-col items-center justify-center gap-[5px] cursor-pointer rounded-lg" aria-label="Toggle menu">
+        <span class="block w-5 h-[1.5px] bg-white"></span>
+        <span class="block w-5 h-[1.5px] bg-white"></span>
+        <span class="block w-5 h-[1.5px] bg-white"></span>
+      </label>
+    </div>
+    <nav id="docs-mobile-panel" class="md:hidden hidden border-t border-hairline px-6 py-4 space-y-1" aria-label="Mobile">
+      <a href="/#platform" class="block text-mid hover:text-white py-1.5 text-sm">Platform</a>
+      <a href="/#pricing" class="block text-mid hover:text-white py-1.5 text-sm">Pricing</a>
+      <a href="{% url 'docs' %}" class="block text-white py-1.5 text-sm">Documentation</a>
+      <a href="{% url 'help' %}" class="block text-mid hover:text-white py-1.5 text-sm">Help center</a>
+      {% if user.is_authenticated %}
+        <a href="/dashboard/" class="cta-primary block text-center px-4 py-3 mt-2">Back to console</a>
+      {% else %}
+        <a href="/auth/login/" class="block text-mid hover:text-white py-1.5 text-sm">Sign in</a>
+        <a href="/signup/" class="cta-primary block text-center px-4 py-3 mt-2">Create account</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main id="main" class="max-w-6xl mx-auto px-6 py-10 sm:py-14 grid lg:grid-cols-[13rem,1fr,12rem] gap-10">
+    <nav class="docs-nav text-sm space-y-0.5" aria-label="Developer docs">
+      <p class="text-xs font-semibold uppercase tracking-wider text-[#838EA3] mb-2 px-1">Developer docs</p>
+      {% for p in pages %}
+        <a href="{% if p.slug == 'index' %}{% url 'docs' %}{% else %}{% url 'docs-page' p.slug %}{% endif %}"
+           class="{% if p.slug == page.slug %}active{% endif %}">
+          {{ p.title }}
+        </a>
+      {% endfor %}
+    </nav>
+
+    <div class="min-w-0">
+      <p class="text-xs font-semibold uppercase tracking-wider text-[#1FAF9C]/80 mb-2 font-mono">Developer docs</p>
+      <h1 class="font-display text-2xl sm:text-3xl font-semibold tracking-tight mb-2">{{ page.title }}</h1>
+      <p class="text-[#657089] mb-8">{{ page.summary }}</p>
+
+      <div class="docs-body">
+        {% block docs_content %}{% endblock %}
+      </div>
+    </div>
+
+    <nav class="hidden lg:block text-sm docs-toc" aria-label="On this page">
+      <p class="text-xs font-semibold uppercase tracking-wider text-[#838EA3] mb-2 px-1">On this page</p>
+      <div class="space-y-1" data-toc-target></div>
+    </nav>
+  </main>
+
+  <footer class="bg-ink border-t border-hairline">
+    <div class="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs text-[#838EA3]">
+      <span>© Akilent · Communications infrastructure for business</span>
+      <span class="flex items-center gap-4">
+        <a href="/#platform" class="hover:text-white">Platform</a>
+        <a href="/#pricing" class="hover:text-white">Pricing</a>
+        <a href="{% url 'docs' %}" class="hover:text-white">Documentation</a>
+        <a href="{% url 'help' %}" class="hover:text-white">Help center</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('docs-mobile-toggle').addEventListener('change', function(){
+      document.getElementById('docs-mobile-panel').classList.toggle('hidden', !this.checked);
+    });
+    document.querySelectorAll('.code-tabs').forEach(function(group){
+      var buttons = group.querySelectorAll('.tab-bar button');
+      buttons.forEach(function(btn){
+        btn.addEventListener('click', function(){
+          buttons.forEach(function(b){ b.classList.remove('active'); });
+          group.querySelectorAll('[data-panel]').forEach(function(p){ p.hidden = true; });
+          btn.classList.add('active');
+          group.querySelector('[data-panel="' + btn.dataset.tab + '"]').hidden = false;
+        });
+      });
+    });
+    (function(){
+      var toc = document.querySelector('[data-toc-target]');
+      if(!toc) return;
+      var headings = document.querySelectorAll('.docs-body h2');
+      if(!headings.length){ toc.closest('.docs-toc').classList.add('hidden'); return; }
+      headings.forEach(function(h, i){
+        if(!h.id) h.id = 'section-' + i;
+        var a = document.createElement('a');
+        a.href = '#' + h.id;
+        a.textContent = h.textContent;
+        a.className = 'block py-1 text-[#657089] hover:text-[#12182B] text-[13px]';
+        toc.appendChild(a);
+      });
+    })();
+  </script>
+</body>
+</html>

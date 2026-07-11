@@ -1,4 +1,4 @@
-{% extends "docs/_base.html" %}
+{% extends "docs/_layout.html" %}
 {% block docs_content %}
 <h2>API keys</h2>
 <p>
@@ -22,10 +22,35 @@ Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
   (<code>429</code>) as a brute-force guard.
 </p>
 
+<h2 id="scopes">Scopes</h2>
+<p>
+  Beyond the plan-tier feature gates (does your plan include the API, bulk
+  email, templates?), individual API keys carry a <code>scopes</code> list
+  that independently controls which endpoints that specific key can call.
+</p>
+<table>
+  <tr><th>Scope</th><th>Required by</th></tr>
+  <tr><td><code>messages:send</code></td><td>Nothing today — <a href="{% url 'docs-page' 'messages' %}">POST /api/v1/messages</a> doesn't check scopes. This is the default scope on every new key.</td></tr>
+  <tr><td><code>templates:manage</code></td><td>All of the <a href="{% url 'docs-page' 'templates' %}">templates</a> endpoints.</td></tr>
+  <tr><td><code>messages:send:bulk</code></td><td>Both <a href="{% url 'docs-page' 'campaigns' %}">campaigns</a> endpoints.</td></tr>
+</table>
+<div class="callout">
+  <p>
+    Every key created from the Domains page today defaults to
+    <code>["messages:send"]</code>, and there's no self-service UI yet to
+    grant a key additional scopes. If you need a key that can manage
+    templates or launch campaigns, <a href="/help/">contact support</a> to
+    have the scope added — don't assume a key can call an endpoint just
+    because your plan includes the feature; the key also needs the matching
+    scope, or you'll get a <code>403 permission_denied</code>.
+  </p>
+</div>
+
 <h2>SMTP relay credentials</h2>
 <p>
   Separate from API keys — see <a href="{% url 'docs-page' 'smtp' %}">SMTP relay</a>
   for how to provision one. These authenticate an SMTP connection directly
-  against the mail server, not calls to <code>/api/v1/</code>.
+  against the mail server, not calls to <code>/api/v1/</code>, and scopes
+  don't apply to them.
 </p>
 {% endblock %}

@@ -1,0 +1,107 @@
+{% extends "docs/_layout.html" %}
+{% block docs_content %}
+<p>
+  Campaigns send one message to many recipients in a single call, each
+  optionally personalized with per-recipient variables. Requires a plan with
+  bulk email sending and an API key with the <code>messages:send:bulk</code>
+  scope (see <a href="{% url 'docs-page' 'authentication' %}#scopes">Scopes</a>).
+</p>
+
+<h2>Launch a campaign</h2>
+<div class="code-tabs">
+  <div class="tab-bar">
+    <button type="button" class="active" data-tab="curl">curl</button>
+    <button type="button" data-tab="python">Python</button>
+  </div>
+  <pre data-panel="curl"><code>curl -X POST https://api.akilent.com/api/v1/campaigns \
+  -H "Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "billing@yourdomain.com",
+    "template_id": 12,
+    "recipients": [
+      { "to": "ada@example.com", "variables": { "customer_name": "Ada" } },
+      { "to": "grace@example.com", "variables": { "customer_name": "Grace" } }
+    ]
+  }'</code></pre>
+  <pre data-panel="python" hidden><code>import requests
+
+resp = requests.post(
+    "https://api.akilent.com/api/v1/campaigns",
+    headers={"Authorization": "Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx"},
+    json={
+        "from": "billing@yourdomain.com",
+        "template_id": 12,
+        "recipients": [
+            {"to": "ada@example.com", "variables": {"customer_name": "Ada"}},
+            {"to": "grace@example.com", "variables": {"customer_name": "Grace"}},
+        ],
+    },
+)
+resp.raise_for_status()
+print(resp.json())</code></pre>
+</div>
+
+<table>
+  <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+  <tr><td><code>from</code></td><td>Yes</td><td>Must be on a <a href="/email/domains/">verified sending domain</a> for your account.</td></tr>
+  <tr><td><code>template_id</code></td><td>See note</td><td>ID of a saved <a href="{% url 'docs-page' 'templates' %}">template</a>.</td></tr>
+  <tr><td><code>subject</code> / <code>text</code> / <code>html</code></td><td>See note</td><td>Inline content, as an alternative to <code>template_id</code>.</td></tr>
+  <tr><td><code>recipients</code></td><td>Yes</td><td>A list of <code>{"to": "&lt;email&gt;", "variables": {...}}</code> objects. <code>variables</code> is optional per recipient.</td></tr>
+</table>
+<div class="callout">
+  <p>
+    <code>template_id</code> and inline <code>subject</code>/<code>text</code>/<code>html</code>
+    are mutually exclusive alternatives, not additive — provide one or the
+    other. Omitting both returns a <code>missing_content</code> error.
+  </p>
+</div>
+
+<h2>Response</h2>
+<p>Launching a campaign queues it and returns immediately:</p>
+<pre><code>202 Accepted
+{
+  "id": 88,
+  "status": "queued",
+  "recipient_count": 2
+}</code></pre>
+
+<h2>Check progress</h2>
+<pre><code>GET /api/v1/campaigns/88
+Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+<pre><code>200 OK
+{
+  "id": 88,
+  "status": "sending",
+  "recipient_count": 2,
+  "queued_count": 0,
+  "sent_count": 1,
+  "failed_count": 0
+}</code></pre>
+<p>
+  Poll this endpoint for progress, or subscribe to
+  <a href="{% url 'docs-page' 'webhooks' %}">webhooks</a> — each recipient in
+  a campaign fires its own <code>message.sent</code> / <code>message.failed</code>
+  event, same as a single <a href="{% url 'docs-page' 'messages' %}">message</a> send.
+</p>
+
+<h2>Recipient caps and volume</h2>
+<p>
+  Your plan caps how many recipients a single campaign can target; exceeding
+  it returns <code>recipient_cap_exceeded</code> before anything is queued.
+  Each recipient in an accepted campaign counts individually against your
+  <a href="{% url 'docs-page' 'rate-limits' %}">monthly send volume</a>, the
+  same as if you'd called <code>/api/v1/messages</code> once per recipient.
+</p>
+
+<h2>Errors</h2>
+<table>
+  <tr><th>Status</th><th>Code</th><th>Cause</th></tr>
+  <tr><td>400</td><td><code>missing_content</code></td><td>Neither <code>template_id</code> nor inline <code>subject</code>/<code>text</code>/<code>html</code> was provided.</td></tr>
+  <tr><td>403</td><td><code>permission_denied</code></td><td>Either your plan doesn't include bulk email, or the API key is missing the <code>messages:send:bulk</code> scope — check the <code>message</code> field to tell which.</td></tr>
+  <tr><td>403</td><td><code>recipient_cap_exceeded</code></td><td>The recipient list exceeds your plan's per-campaign cap.</td></tr>
+  <tr><td>403</td><td><code>unverified_domain</code></td><td><code>from</code>'s domain isn't verified for your account.</td></tr>
+  <tr><td>403</td><td><code>emails</code></td><td>Sending would exceed your monthly send volume cap.</td></tr>
+  <tr><td>404</td><td><code>not_found</code></td><td>No campaign with that ID on your account (on the status-check endpoint).</td></tr>
+</table>
+{% endblock %}

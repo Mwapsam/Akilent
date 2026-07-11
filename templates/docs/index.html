@@ -1,10 +1,10 @@
-{% extends "docs/_base.html" %}
+{% extends "docs/_layout.html" %}
 {% block docs_content %}
 <p>
-  Akilent's Developer Platform lets you send transactional email three ways: a
-  versioned REST API, direct SMTP relay, and signed webhooks for delivery,
-  open, and click events. All three sit on top of the same domain
-  verification and plan limits as the web dashboard.
+  Akilent's Developer Platform lets you send transactional email four ways: a
+  versioned REST API, reusable templates, bulk campaigns, direct SMTP relay,
+  and signed webhooks for delivery, open, and click events. All of it sits on
+  top of the same domain verification and plan limits as the web dashboard.
 </p>
 
 <h2>Quick start</h2>
@@ -17,19 +17,24 @@
 <h2>What's here</h2>
 <table>
   <tr><th>Page</th><th>Covers</th></tr>
-  <tr><td><a href="{% url 'docs-page' 'authentication' %}">Authentication</a></td><td>API keys and SMTP relay credentials — creating, rotating, revoking.</td></tr>
-  <tr><td><a href="{% url 'docs-page' 'messages' %}">Send a message</a></td><td>The REST API: request/response shape, status codes.</td></tr>
+  <tr><td><a href="{% url 'docs-page' 'authentication' %}">Authentication</a></td><td>API keys, SMTP relay credentials, and key scopes — creating, rotating, revoking.</td></tr>
+  <tr><td><a href="{% url 'docs-page' 'messages' %}">Send a message</a></td><td>The REST API: request/response shape, status codes, idempotency.</td></tr>
+  <tr><td><a href="{% url 'docs-page' 'templates' %}">Templates</a></td><td>Save and reuse subject/text/html content, with variable substitution.</td></tr>
+  <tr><td><a href="{% url 'docs-page' 'campaigns' %}">Campaigns</a></td><td>Send to many recipients at once, with per-recipient personalization.</td></tr>
   <tr><td><a href="{% url 'docs-page' 'smtp' %}">SMTP relay</a></td><td>Sending directly over SMTP instead of the HTTP API.</td></tr>
   <tr><td><a href="{% url 'docs-page' 'webhooks' %}">Webhooks</a></td><td>Subscribing to events and verifying signed payloads.</td></tr>
   <tr><td><a href="{% url 'docs-page' 'errors' %}">Error codes</a></td><td>The error envelope and what each code means.</td></tr>
   <tr><td><a href="{% url 'docs-page' 'rate-limits' %}">Rate limits</a></td><td>Per-minute throttling vs. the monthly volume cap.</td></tr>
+  <tr><td><a href="{% url 'docs-page' 'changelog' %}">Versioning &amp; changelog</a></td><td>How <code>/api/v1/</code> versioning works, and what's changed.</td></tr>
 </table>
 
 <h2>What's not here yet</h2>
 <p>
-  Client SDKs aren't published — every example on this site is a plain
-  <code>curl</code>/HTTP request, and any language with an HTTP client and
-  HMAC-SHA256 (for webhook verification) can integrate directly. WhatsApp
-  isn't part of the public API yet — this platform currently covers email only.
+  Client SDKs aren't published — every example on this site is a plain HTTP
+  request (shown in curl and a few common server languages), and any
+  language with an HTTP client and HMAC-SHA256 (for webhook verification) can
+  integrate directly. There's no published OpenAPI/Swagger spec yet, either.
+  WhatsApp isn't part of the public API — this platform currently covers
+  email only.
 </p>
 {% endblock %}

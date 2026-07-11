@@ -48,6 +48,11 @@ Pass collapsible=True in the desktop sidebar so labels hide when collapsed.{% en
     {% include "components/icon.html" with name="book-open" class="w-5 h-5 shrink-0" %}
     <span {% if collapsible %}x-show="!$store.ui.sidebarCollapsed" x-cloak{% endif %}>Help &amp; guides</span>
   </a>
+  <a href="/docs/" class="nav-link {% if '/docs' in p %}nav-link-active{% endif %}"
+     {% if '/docs' in p %}aria-current="page"{% endif %}>
+    {% include "components/icon.html" with name="globe" class="w-5 h-5 shrink-0" %}
+    <span {% if collapsible %}x-show="!$store.ui.sidebarCollapsed" x-cloak{% endif %}>API docs</span>
+  </a>
 
   {% if user.is_superuser %}
   <p class="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400"

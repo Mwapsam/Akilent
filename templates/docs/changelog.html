@@ -1,0 +1,24 @@
+{% extends "docs/_layout.html" %}
+{% block docs_content %}
+<h2>Versioning</h2>
+<p>
+  The REST API is versioned by URL prefix — everything documented here lives
+  under <code>/api/v1/</code>. There is no <code>v2</code> yet; requesting an
+  unknown version returns a plain <code>404</code> (not the standard error
+  envelope, since it never reaches a versioned view).
+</p>
+<p>
+  When a <code>v2</code> ships, <code>v1</code> will keep working unchanged —
+  breaking changes are shipped as a new version, not as in-place edits to an
+  existing one. Additive, backward-compatible changes (a new optional field,
+  a new endpoint) can land on <code>v1</code> directly and will be logged
+  below.
+</p>
+
+<h2>Changelog</h2>
+<table>
+  <tr><th>Date</th><th>Change</th></tr>
+  <tr><td>2026-07</td><td>Added <code>templates:manage</code> and <code>messages:send:bulk</code> API key scopes, and the <a href="{% url 'docs-page' 'templates' %}">templates</a> and <a href="{% url 'docs-page' 'campaigns' %}">campaigns</a> endpoints.</td></tr>
+  <tr><td>—</td><td><code>/api/v1/messages</code>, SMTP relay, and webhooks launch. See <a href="{% url 'docs-page' 'index' %}">Developer Platform</a>.</td></tr>
+</table>
+{% endblock %}

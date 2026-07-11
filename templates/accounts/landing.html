@@ -281,7 +281,7 @@
         <a href="#automations" class="text-mid hover:text-white">Automations</a>
         <a href="#developers" class="text-mid hover:text-white">Developers</a>
         <a href="#pricing" class="text-mid hover:text-white">Pricing</a>
-        <a href="{% url 'help' %}" class="text-mid hover:text-white">Documentation</a>
+        <a href="{% url 'docs' %}" class="text-mid hover:text-white">Documentation</a>
       </nav>
 
       <div class="hidden md:flex items-center gap-3 text-sm shrink-0">
@@ -309,7 +309,7 @@
           <a href="#automations" class="text-mid hover:text-white py-2">Automations</a>
           <a href="#developers" class="text-mid hover:text-white py-2">Developers</a>
           <a href="#pricing" class="text-mid hover:text-white py-2">Pricing</a>
-          <a href="{% url 'help' %}" class="text-mid hover:text-white py-2">Documentation</a>
+          <a href="{% url 'docs' %}" class="text-mid hover:text-white py-2">Documentation</a>
           {% if user.is_authenticated %}
             <a href="/dashboard/" class="cta-primary px-4 py-3 text-center mt-2">Open console</a>
           {% else %}
@@ -616,7 +616,7 @@
           <a href="/signup/" class="cta-primary text-sm px-6 py-3 shadow-[0_20px_50px_-20px_rgba(255,176,32,.45)]">
             Create account
           </a>
-          <a href="{% url 'help' %}" class="cta-outline text-sm font-medium px-6 py-3">
+          <a href="{% url 'docs' %}" class="cta-outline text-sm font-medium px-6 py-3">
             Explore documentation
           </a>
         </div>
@@ -630,7 +630,7 @@
       <span class="flex items-center gap-4">
         <a href="#platform" class="hover:text-white">Platform</a>
         <a href="#pricing" class="hover:text-white">Pricing</a>
-        <a href="{% url 'help' %}" class="hover:text-white">Documentation</a>
+        <a href="{% url 'docs' %}" class="hover:text-white">Documentation</a>
       </span>
     </div>
   </footer>

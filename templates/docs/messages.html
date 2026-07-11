@@ -1,17 +1,89 @@
-{% extends "docs/_base.html" %}
+{% extends "docs/_layout.html" %}
 {% block docs_content %}
 <h2>Request</h2>
-<pre><code>POST /api/v1/messages
-Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx
-Content-Type: application/json
+<div class="code-tabs">
+  <div class="tab-bar">
+    <button type="button" class="active" data-tab="curl">curl</button>
+    <button type="button" data-tab="python">Python</button>
+    <button type="button" data-tab="node">Node</button>
+    <button type="button" data-tab="ruby">Ruby</button>
+    <button type="button" data-tab="php">PHP</button>
+  </div>
+  <pre data-panel="curl"><code>curl -X POST https://api.akilent.com/api/v1/messages \
+  -H "Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "billing@yourdomain.com",
+    "to": "customer@example.com",
+    "subject": "Payment received",
+    "text": "Thanks for your payment.",
+    "html": "&lt;p&gt;Thanks for your payment.&lt;/p&gt;"
+  }'</code></pre>
+  <pre data-panel="python" hidden><code>import requests
 
-{
-  "from": "billing@yourdomain.com",
-  "to": "customer@example.com",
-  "subject": "Payment received",
-  "text": "Thanks for your payment.",
-  "html": "&lt;p&gt;Thanks for your payment.&lt;/p&gt;"
-}</code></pre>
+resp = requests.post(
+    "https://api.akilent.com/api/v1/messages",
+    headers={"Authorization": "Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx"},
+    json={
+        "from": "billing@yourdomain.com",
+        "to": "customer@example.com",
+        "subject": "Payment received",
+        "text": "Thanks for your payment.",
+        "html": "&lt;p&gt;Thanks for your payment.&lt;/p&gt;",
+    },
+)
+resp.raise_for_status()
+print(resp.json())</code></pre>
+  <pre data-panel="node" hidden><code>const resp = await fetch("https://api.akilent.com/api/v1/messages", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    from: "billing@yourdomain.com",
+    to: "customer@example.com",
+    subject: "Payment received",
+    text: "Thanks for your payment.",
+    html: "&lt;p&gt;Thanks for your payment.&lt;/p&gt;",
+  }),
+});
+console.log(await resp.json());</code></pre>
+  <pre data-panel="ruby" hidden><code>require "net/http"
+require "json"
+require "uri"
+
+uri = URI("https://api.akilent.com/api/v1/messages")
+req = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
+req["Authorization"] = "Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+req.body = {
+  from: "billing@yourdomain.com",
+  to: "customer@example.com",
+  subject: "Payment received",
+  text: "Thanks for your payment.",
+  html: "&lt;p&gt;Thanks for your payment.&lt;/p&gt;",
+}.to_json
+
+resp = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+puts resp.body</code></pre>
+  <pre data-panel="php" hidden><code>$ch = curl_init("https://api.akilent.com/api/v1/messages");
+curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+        "Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS => json_encode([
+        "from" => "billing@yourdomain.com",
+        "to" => "customer@example.com",
+        "subject" => "Payment received",
+        "text" => "Thanks for your payment.",
+        "html" => "&lt;p&gt;Thanks for your payment.&lt;/p&gt;",
+    ]),
+]);
+echo curl_exec($ch);</code></pre>
+</div>
 
 <table>
   <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
@@ -21,6 +93,15 @@ Content-Type: application/json
   <tr><td><code>text</code></td><td>No</td><td>Plain-text body.</td></tr>
   <tr><td><code>html</code></td><td>No</td><td>HTML body, sent as a MIME alternative alongside <code>text</code>.</td></tr>
 </table>
+
+<h3>Sending with a template</h3>
+<p>
+  Rather than passing <code>subject</code>/<code>text</code>/<code>html</code>
+  inline on every request, create a reusable
+  <a href="{% url 'docs-page' 'templates' %}">template</a> and reference it —
+  the same pattern <a href="{% url 'docs-page' 'campaigns' %}">campaigns</a>
+  use for bulk sends.
+</p>
 
 <h2>Response</h2>
 <p>A successful call queues the message and returns immediately — sending happens asynchronously.</p>
@@ -36,6 +117,19 @@ Content-Type: application/json
   <code>message.sent</code> / <code>message.failed</code> outcomes.
 </p>
 
+<h2>Idempotency</h2>
+<div class="callout">
+  <p>
+    There is no idempotency-key support on this endpoint today. If a request
+    times out or your connection drops after the message was actually
+    accepted, retrying it will send a second copy — there's no way to safely
+    replay a call and be guaranteed a single send. If duplicate delivery
+    would be a problem for you, track sent message <code>id</code>s
+    client-side (or de-duplicate on a stable value in your own data, like an
+    invoice ID) before retrying.
+  </p>
+</div>
+
 <h2>Errors</h2>
 <p>See the full <a href="{% url 'docs-page' 'errors' %}">error codes</a> reference. The most common ones for this endpoint:</p>
 <table>
@@ -43,7 +137,7 @@ Content-Type: application/json
   <tr><td>400</td><td><code>invalid</code></td><td>Missing/malformed <code>from</code> or <code>to</code>.</td></tr>
   <tr><td>401</td><td><code>authentication_failed</code></td><td>Missing or invalid API key.</td></tr>
   <tr><td>403</td><td><code>unverified_domain</code></td><td><code>from</code>'s domain isn't verified for your account.</td></tr>
-  <tr><td>403</td><td><code>email_apis</code></td><td>Your plan doesn't include the API &amp; SMTP relay.</td></tr>
+  <tr><td>403</td><td><code>permission_denied</code></td><td>Your plan doesn't include the API &amp; SMTP relay — see the <code>message</code> field for detail.</td></tr>
   <tr><td>403</td><td><code>emails</code></td><td>Monthly send volume cap reached.</td></tr>
   <tr><td>429</td><td>—</td><td>Per-minute rate limit exceeded; see <code>Retry-After</code>.</td></tr>
 </table>

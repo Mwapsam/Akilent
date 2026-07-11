@@ -37,6 +37,16 @@ PAGES = [
         "POST /api/v1/messages — request, response, and status codes.",
     ),
     DocPage(
+        "templates",
+        "Templates",
+        "Create and manage reusable email templates for /api/v1/templates.",
+    ),
+    DocPage(
+        "campaigns",
+        "Campaigns",
+        "Send to many recipients at once with POST /api/v1/campaigns.",
+    ),
+    DocPage(
         "smtp",
         "SMTP relay",
         "Send directly over SMTP using a per-domain relay credential.",
@@ -55,6 +65,11 @@ PAGES = [
         "rate-limits",
         "Rate limits",
         "Per-minute request throttling vs. the monthly volume cap — two different layers.",
+    ),
+    DocPage(
+        "changelog",
+        "Versioning & changelog",
+        "How API versions work, and what's changed since launch.",
     ),
 ]
 

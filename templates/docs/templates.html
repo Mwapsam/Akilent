@@ -1,0 +1,94 @@
+{% extends "docs/_layout.html" %}
+{% block docs_content %}
+<p>
+  Templates let you save a reusable <code>subject</code>/<code>text</code>/<code>html</code>
+  body once and reference it by ID or slug from
+  <a href="{% url 'docs-page' 'messages' %}">messages</a> and
+  <a href="{% url 'docs-page' 'campaigns' %}">campaigns</a>, instead of
+  repeating the content on every request. Requires a plan with the templates
+  feature and an API key with the <code>templates:manage</code> scope (see
+  <a href="{% url 'docs-page' 'authentication' %}#scopes">Scopes</a>).
+</p>
+
+<h2>List templates</h2>
+<pre><code>GET /api/v1/templates
+Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+<pre><code>200 OK
+[
+  {
+    "id": 12,
+    "name": "Payment receipt",
+    "slug": "payment-receipt",
+    "subject": "Payment received",
+    "updated_at": "2026-06-02T10:15:00Z"
+  }
+]</code></pre>
+<div class="callout">
+  <p>
+    This list is not paginated — it returns every active template for your
+    account as a single array. If you maintain a very large template
+    library, be aware there's currently no page size or cursor parameter.
+  </p>
+</div>
+
+<h2>Create a template</h2>
+<pre><code>POST /api/v1/templates
+Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx
+Content-Type: application/json
+
+{
+  "name": "Payment receipt",
+  "slug": "payment-receipt",
+  "subject": "Payment received",
+  "text": "Hi {% templatetag openvariable %} customer_name {% templatetag closevariable %}, thanks for your payment.",
+  "html": "&lt;p&gt;Hi {% templatetag openvariable %} customer_name {% templatetag closevariable %}, thanks for your payment.&lt;/p&gt;",
+  "sample_variables": { "customer_name": "Ada" }
+}</code></pre>
+<table>
+  <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+  <tr><td><code>name</code></td><td>Yes</td><td>Up to 150 characters.</td></tr>
+  <tr><td><code>slug</code></td><td>No</td><td>Up to 150 characters; used to reference the template from campaigns. Auto-derived if omitted.</td></tr>
+  <tr><td><code>subject</code></td><td>No</td><td>Defaults to empty.</td></tr>
+  <tr><td><code>text</code></td><td>No</td><td>Plain-text body.</td></tr>
+  <tr><td><code>html</code></td><td>No</td><td>HTML body.</td></tr>
+  <tr><td><code>sample_variables</code></td><td>No</td><td>A dict of example values, used for previewing the template — not required for sending.</td></tr>
+</table>
+<div class="callout">
+  <p>
+    <code>subject</code>, <code>text</code>, and <code>html</code> are
+    rendered as Django template syntax — <code>{% templatetag openvariable %} name {% templatetag closevariable %}</code>
+    for variable substitution, plus the built-in template tags and filters
+    (<code>{% templatetag openblock %} if {% templatetag closeblock %}</code>,
+    <code>|default</code>, etc.). Rendering is sandboxed to only the
+    <code>variables</code> you pass at send time — it never has access to
+    your account data, settings, or the request.
+  </p>
+</div>
+<pre><code>201 Created
+{
+  "id": 12,
+  "name": "Payment receipt",
+  "slug": "payment-receipt"
+}</code></pre>
+
+<h2>Get, update, or delete a template</h2>
+<pre><code>GET    /api/v1/templates/&lt;slug&gt;
+PATCH  /api/v1/templates/&lt;slug&gt;
+DELETE /api/v1/templates/&lt;slug&gt;</code></pre>
+<p>
+  <code>GET</code> returns the full template, including <code>text</code>,
+  <code>html</code>, and <code>sample_variables</code> alongside the list
+  fields. <code>PATCH</code> is partial — only the fields you include in the
+  request body are updated. <code>DELETE</code> returns <code>204</code> and
+  is a <strong>soft delete</strong>: the template is deactivated
+  (<code>is_active=False</code>) rather than permanently removed, and will no
+  longer appear in list results or be usable by slug.
+</p>
+
+<h2>Errors</h2>
+<table>
+  <tr><th>Status</th><th>Code</th><th>Cause</th></tr>
+  <tr><td>403</td><td><code>permission_denied</code></td><td>Either your plan doesn't include email templates, or the API key is missing the <code>templates:manage</code> scope — check the <code>message</code> field to tell which.</td></tr>
+  <tr><td>404</td><td><code>not_found</code></td><td>No active template with that slug on your account.</td></tr>
+</table>
+{% endblock %}
