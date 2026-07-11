@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 
 os.environ.setdefault("USE_SQLITE", "1")
 os.environ.setdefault("DEBUG", "true")
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("FLUTTERWAVE_SECRET_KEY", "FLWSECK_TEST-testkey")
 os.environ.setdefault("FLUTTERWAVE_WEBHOOK_HASH", "test-hash")
