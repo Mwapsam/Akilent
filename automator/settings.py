@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
     "apps.core",
     "apps.accounts",
     "apps.whatsapp",
@@ -36,6 +37,7 @@ INSTALLED_APPS = [
     "apps.bitrix",
     "apps.automation",
     "apps.billing",
+    "apps.api",
 ]
 
 MIDDLEWARE = [
@@ -238,11 +240,57 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "True").lower() == "true"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 
+# Email is the always-on v1 product (unlike the flagged-off WhatsApp/Bitrix
+# verticals above), so these secrets are required in every production
+# deployment rather than gated behind a feature flag.
+if not DEBUG:
+    if not STALWART_API_BASE:
+        raise ValueError("STALWART_API_BASE is required")
+    if not STALWART_API_KEY:
+        raise ValueError("STALWART_API_KEY is required")
+    if not EMAIL_HOST:
+        raise ValueError("EMAIL_HOST is required")
+    if not EMAIL_HOST_USER:
+        raise ValueError("EMAIL_HOST_USER is required")
+    if not EMAIL_HOST_PASSWORD:
+        raise ValueError("EMAIL_HOST_PASSWORD is required")
+
+# The external Stalwart submission endpoint, shown to customers setting up
+# per-tenant SMTP relay (apps.api / apps.email SmtpCredential docs).
+SMTP_RELAY_HOST = os.getenv("SMTP_RELAY_HOST", EMAIL_HOST)
+SMTP_RELAY_PORT = int(os.getenv("SMTP_RELAY_PORT", str(EMAIL_PORT)))
+
+# --- REST API (Developer Platform) ---
+# Public, versioned API surface (apps.api). Auth/permission classes are set
+# per-view rather than as DRF defaults, so this never touches the
+# session-authenticated dashboard views in apps.email/apps.accounts/etc.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_PERMISSION_CLASSES": [],
+    "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
+    "ALLOWED_VERSIONS": ["v1"],
+    "DEFAULT_THROTTLE_CLASSES": [],
+    "EXCEPTION_HANDLER": "apps.api.errors.custom_exception_handler",
+    "UNAUTHENTICATED_USER": None,
+}
+
 # --- Flutterwave ---
 
 FLUTTERWAVE_SECRET_KEY = os.getenv("FLUTTERWAVE_SECRET_KEY")
 FLUTTERWAVE_WEBHOOK_HASH = os.getenv("FLUTTERWAVE_WEBHOOK_HASH")
 FLUTTERWAVE_CURRENCY = os.getenv("FLUTTERWAVE_CURRENCY", "USD")
+
+# --- Cache ---
+# Backs DRF request-rate throttling and the API-key bad-attempt lockout
+# counter (apps.api.authentication) — must be shared across gunicorn workers,
+# so LocMemCache (Django's default) won't do outside of tests. Redis is
+# already a dependency for Celery; a separate DB index keeps the keyspaces apart.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.getenv("REDIS_CACHE_URL", "redis://redis:6379/1"),
+    }
+}
 
 # --- Celery ---
 

@@ -21,7 +21,7 @@ from django.utils import timezone
 from apps.email.exceptions import EmailProviderError
 from apps.email.models import EmailMessage, Mailbox, ProvisioningJob
 from apps.email.providers import get_mail_provider
-from apps.email.services import smtp_send
+from apps.email.services import MailboxService, smtp_send
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def provision_mailbox_async(
         job.mark_running()
 
     try:
-        mb = Mailbox.objects.get(pk=mailbox_id)
+        mb = Mailbox.objects.select_related("account").get(pk=mailbox_id)
     except Mailbox.DoesNotExist:
         logger.error("provision_mailbox_async: Mailbox %s not found", mailbox_id)
         if job:
@@ -65,15 +65,7 @@ def provision_mailbox_async(
         return
 
     try:
-        get_mail_provider().create_mailbox(
-            email=mb.email,
-            password=password,
-            name=mb.name,
-            quota_mb=mb.quota_mb or None,
-        )
-        mb.status = Mailbox.Status.ACTIVE
-        mb.error = None
-        mb.save(update_fields=["status", "error"])
+        MailboxService(mb.account).provision(mb, password)
         if job:
             job.mark_success()
     except EmailProviderError as exc:
@@ -302,15 +294,22 @@ def send_email(
             html_body=html_body,
         )
         msg.mark_sent(message_id)
-        try:
-            from apps.billing.models import UsageSummary
-
-            UsageSummary.increment_emails(msg.account)
-        except Exception as exc:
-            logger.debug("send_email: usage increment skipped: %s", exc)
     except Exception as exc:
         msg.mark_failed(str(exc))
         logger.exception("send_email: failed for EmailMessage %s", email_message_id)
+        is_last = self.request.retries >= _MAX_RETRIES
+        if is_last:
+            # Quota was reserved at accept time (LimitChecker.check_email); a
+            # message that never gets delivered shouldn't permanently burn it.
+            try:
+                from apps.billing.limits import LimitChecker
+
+                LimitChecker(msg.account).release_email()
+            except Exception:
+                logger.exception(
+                    "send_email: failed to release quota for EmailMessage %s",
+                    email_message_id,
+                )
         raise self.retry(exc=exc)
 
 

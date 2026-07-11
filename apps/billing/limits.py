@@ -114,14 +114,22 @@ class LimitChecker:
             )
 
     def check_email(self):
+        """Reserve one email against the monthly cap, atomically.
+
+        Unlike the other check_* methods this both checks *and* claims the
+        slot in one step — callers that reserve at accept time must call
+        release_email() if the send later fails terminally, to avoid
+        permanently burning quota on a message that was never delivered.
+        """
         plan = self._require_active_plan()
-        if plan.max_emails_per_month == -1:
-            return
         from apps.billing.models import UsageSummary
-        used = UsageSummary.get_current_email_usage(self.account)
-        if used >= plan.max_emails_per_month:
+        if not UsageSummary.reserve_email(self.account, plan.max_emails_per_month):
             raise PlanLimitExceeded(
                 f"Monthly email limit of {plan.max_emails_per_month} reached. "
                 "Please upgrade your plan.",
                 "emails",
             )
+
+    def release_email(self):
+        from apps.billing.models import UsageSummary
+        UsageSummary.release_email(self.account)

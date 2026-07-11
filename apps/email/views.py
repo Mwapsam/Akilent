@@ -22,8 +22,9 @@ from apps.email.models import (
     EmailTrackingToken,
     Mailbox,
 )
-from apps.email.providers import MailProviderError, get_mail_provider
-from apps.email.tasks import provision_mailbox, send_email
+from apps.email.providers import MailProviderError
+from apps.email.services import AliasService, DomainService, MailboxService
+from apps.email.tasks import provision_mailbox
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ def domains_list(request):
         if account
         else None
     )
+    new_api_key_plaintext = request.session.pop("new_api_key", None) if account else None
     from apps.billing.limits import LimitChecker
 
     email_apis_enabled = admin or (account and LimitChecker(account).has_feature("email_apis"))
@@ -96,6 +98,7 @@ def domains_list(request):
         "is_admin": admin,
         "domains": domains,
         "api_key": api_key,
+        "new_api_key_plaintext": new_api_key_plaintext,
         "recent": recent,
         "email_apis_enabled": email_apis_enabled,
         "accounts": Account.objects.order_by("company_name") if admin else None,
@@ -140,10 +143,7 @@ def domain_create(request):
 
     kind, message = "success", f"{domain} added — add the DNS records below, then run the DNS check."
     try:
-        result = get_mail_provider().provision_domain(domain, selector=record.dkim_selector)
-        record.dkim_public_key = result.dkim.dkim_txt
-        record.dkim_selector = result.dkim.selector
-        record.save(update_fields=["dkim_public_key", "dkim_selector"])
+        DomainService(account, actor=request.user).provision(record)
     except MailProviderError as exc:
         record.status = EmailDomain.Status.FAILED
         record.save(update_fields=["status"])
@@ -218,9 +218,11 @@ def domain_toggle(request, pk):
     ajax = is_ajax(request)
     new_active = not record.is_active
     try:
-        get_mail_provider().set_domain_active(record.domain, active=new_active)
-        record.is_active = new_active
-        record.save(update_fields=["is_active"])
+        service = DomainService(record.account, actor=request.user)
+        if new_active:
+            service.enable(record)
+        else:
+            service.disable(record)
         kind = "success"
         message = f"{record.domain} {'enabled' if new_active else 'disabled'}."
     except MailProviderError as exc:
@@ -245,7 +247,7 @@ def domain_delete(request, pk):
     record = get_object_or_404(_scoped(EmailDomain.objects, request, account), pk=pk)
     ajax = is_ajax(request)
     try:
-        get_mail_provider().delete_domain(record.domain)
+        DomainService(record.account, actor=request.user).deprovision(record)
     except MailProviderError as exc:
         msg = f"Could not delete {record.domain}: {exc}"
         if ajax:
@@ -267,8 +269,9 @@ def key_create(request):
     if account is None:
         return redirect("dashboard")
     EmailApiKey.objects.filter(account=account).update(is_active=False)
-    EmailApiKey.objects.create(account=account, name="default")
-    messages.success(request, "New API key generated.")
+    _, raw_key = EmailApiKey.create_for_account(account, name="default")
+    request.session["new_api_key"] = raw_key
+    messages.success(request, "New API key generated — copy it now, it won't be shown again.")
     return redirect("email-domains")
 
 
@@ -435,7 +438,7 @@ def mailbox_delete(request, pk):
     ajax = is_ajax(request)
     email = mb.email
     try:
-        get_mail_provider().delete_mailbox(mb.email)
+        MailboxService(mb.account, actor=request.user).deprovision(mb)
         mb.delete()
     except MailProviderError as exc:
         if ajax:
@@ -465,7 +468,7 @@ def mailbox_password(request, pk):
         messages.error(request, "Password is required.")
         return redirect("email-mailboxes")
     try:
-        get_mail_provider().change_password(mb.email, password)
+        MailboxService(mb.account, actor=request.user).change_password(mb, password)
     except MailProviderError as exc:
         if ajax:
             return _ajax_error(f"Password change failed: {exc}")
@@ -502,9 +505,7 @@ def mailbox_quota(request, pk):
             quota_mb = cap
             note = f" (capped at {cap} MB by plan)"
     try:
-        get_mail_provider().set_quota(mb.email, quota_mb)
-        mb.quota_mb = quota_mb
-        mb.save(update_fields=["quota_mb"])
+        MailboxService(mb.account, actor=request.user).set_quota(mb, quota_mb)
     except MailProviderError as exc:
         if ajax:
             return _ajax_error(f"Quota update failed: {exc}")
@@ -551,13 +552,12 @@ def alias_create(request):
         except PlanLimitExceeded as exc:
             return fail(str(exc))
 
+    alias = EmailAlias(account=domain.account, domain=domain, address=address, goto=goto)
     try:
-        get_mail_provider().create_alias(address, [goto])
-        alias = EmailAlias.objects.create(
-            account=domain.account, domain=domain, address=address, goto=goto
-        )
+        AliasService(domain.account, actor=request.user).provision(alias)
     except MailProviderError as exc:
         return fail(f"Alias creation failed: {exc}")
+    alias.save()
 
     if ajax:
         resp = render(request, "email/_alias_row.html", {"a": alias, "is_admin": admin})
@@ -620,14 +620,21 @@ def _authenticate(request):
             header = auth.removeprefix("Bearer ").strip()
     if not header:
         return None
-    return EmailApiKey.objects.filter(key=header, is_active=True).select_related(
-        "account"
-    ).first()
+    return EmailApiKey.authenticate(header)
 
 
 @csrf_exempt
 @require_POST
 def api_send(request):
+    """Deprecated shim for POST /api/v1/messages (apps.api.views.MessageCreateView).
+
+    Kept working so integrations built against the original path don't break
+    mid-rollout; shares its actual send logic with the versioned endpoint via
+    apps.api.services so the two can never drift out of the same behavior.
+    """
+    from apps.api.services import UnverifiedDomainError, create_and_queue_message
+    from apps.billing.limits import PlanLimitExceeded
+
     api_key = _authenticate(request)
     if api_key is None:
         return JsonResponse({"error": "Invalid or missing API key"}, status=401)
@@ -648,37 +655,22 @@ def api_send(request):
     if not from_email or not to_email:
         return JsonResponse({"error": "'from' and 'to' are required"}, status=400)
 
-    from_domain = from_email.rsplit("@", 1)[-1].lower()
-    domain = EmailDomain.objects.filter(
-        account=account, domain=from_domain, status=EmailDomain.Status.VERIFIED
-    ).first()
-    if domain is None:
-        return JsonResponse(
-            {"error": f"'{from_domain}' is not a verified sending domain for this account"},
-            status=403,
-        )
-
-    from apps.billing.limits import LimitChecker, PlanLimitExceeded
-    lc = LimitChecker(account)
-    if not lc.has_feature("email_apis"):
-        return JsonResponse(
-            {"error": "Your plan does not include the email API & SMTP relay. Upgrade to send."},
-            status=403,
-        )
     try:
-        lc.check_email()
+        msg = create_and_queue_message(
+            account=account,
+            from_email=from_email,
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+    except UnverifiedDomainError as exc:
+        return JsonResponse({"error": str(exc)}, status=403)
     except PlanLimitExceeded as exc:
         return JsonResponse({"error": str(exc)}, status=403)
 
-    msg = EmailMessage.objects.create(
-        account=account,
-        domain=domain,
-        from_email=from_email,
-        to_email=to_email,
-        subject=subject,
-    )
     api_key.touch()
-    transaction.on_commit(
-        lambda: send_email.delay(msg.id, text_body=text_body, html_body=html_body)
-    )
-    return JsonResponse({"id": msg.id, "status": msg.status}, status=202)
+    response = JsonResponse({"id": msg.id, "status": msg.status}, status=202)
+    response["Deprecation"] = "true"
+    response["Link"] = '</api/v1/messages>; rel="successor-version"'
+    return response

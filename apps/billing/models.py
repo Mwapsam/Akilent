@@ -41,7 +41,11 @@ class Plan(models.Model):
     inbound_email = models.BooleanField(default=False)      # inbound email processing
     tracking_webhooks = models.BooleanField(default=False)  # tracking, analytics & webhooks
     detailed_analytics = models.BooleanField(default=False) # detailed analytics & insights
+    outbound_webhooks = models.BooleanField(default=False)  # delivery/open/click callbacks
     log_retention_days = models.PositiveIntegerField(default=7)  # log retention window
+    # Requests/minute against apps.api (distinct from max_emails_per_month,
+    # which is a monthly volume cap, not a request-rate limit).
+    api_rate_per_min = models.PositiveIntegerField(default=60)
 
     # Set this once you create matching plans in the Flutterwave dashboard
     flutterwave_plan_id = models.CharField(max_length=100, blank=True, null=True)
@@ -152,6 +156,33 @@ class UsageSummary(models.Model):
     @classmethod
     def increment_emails(cls, account):
         cls._increment(account, "emails_used")
+
+    @classmethod
+    def reserve_email(cls, account, cap: int) -> bool:
+        """Atomically claim one email against the monthly cap.
+
+        cap=-1 means unlimited. Returns False (without incrementing) if the
+        cap has already been reached — the single conditional UPDATE closes
+        the check-then-increment race a plain get()-then-F()-update would
+        leave open under concurrent sends.
+        """
+        period_start = timezone.now().date().replace(day=1)
+        obj, _ = cls.objects.get_or_create(account=account, period_start=period_start)
+        if cap == -1:
+            cls.objects.filter(pk=obj.pk).update(emails_used=F("emails_used") + 1)
+            return True
+        updated = cls.objects.filter(pk=obj.pk, emails_used__lt=cap).update(
+            emails_used=F("emails_used") + 1
+        )
+        return updated > 0
+
+    @classmethod
+    def release_email(cls, account) -> None:
+        """Refund a reservation made by reserve_email (e.g. on terminal send failure)."""
+        period_start = timezone.now().date().replace(day=1)
+        cls.objects.filter(
+            account=account, period_start=period_start, emails_used__gt=0
+        ).update(emails_used=F("emails_used") - 1)
 
     @classmethod
     def get_current_usage(cls, account):

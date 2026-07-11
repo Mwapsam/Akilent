@@ -22,7 +22,10 @@ dependencies = [
     "gunicorn (>=23.0,<24.0)",
     "sentry-sdk[django] (>=2.0,<3.0)",
     "dnspython (>=2.8.0,<3.0.0)",
-    "uuid6 (>=2025.0.1,<2026.0.0)"
+    "uuid6 (>=2025.0.1,<2026.0.0)",
+    "djangorestframework (>=3.16,<4.0)",
+    "markdown (>=3.10.2,<4.0.0)",
+    "django-filter (>=25.2,<26.0)"
 ]
 
 

@@ -1,3 +1,4 @@
+import hashlib
 import re
 import secrets
 
@@ -263,25 +264,68 @@ class EmailDomain(models.Model):
 
 
 class EmailApiKey(models.Model):
-    """A per-account key authenticating calls to the transactional send API."""
+    """A per-account key authenticating calls to the transactional send API.
+
+    New keys are ``ak_live_...``, hashed (sha256) before storage — the
+    plaintext is only ever available once, at creation, via
+    ``create_for_account``. ``key`` is a legacy column: pre-migration keys
+    (``ek_...``) were stored in plaintext there and keep authenticating via
+    ``authenticate()``'s fallback lookup until customers rotate onto a
+    hashed key, at which point ``key`` can be dropped in a follow-up migration.
+    """
 
     account = models.ForeignKey(
         "accounts.Account", on_delete=models.CASCADE, related_name="email_api_keys"
     )
     name = models.CharField(max_length=100, default="default")
-    key = models.CharField(max_length=64, unique=True, db_index=True)
+
+    # Legacy plaintext column — new keys leave this blank.
+    key = models.CharField(max_length=64, unique=True, db_index=True, blank=True, null=True)
+
+    key_hash = models.CharField(max_length=64, unique=True, db_index=True, blank=True, null=True)
+    key_prefix = models.CharField(max_length=12, default="ak_live_")
+    last4 = models.CharField(max_length=4, blank=True, default="")
+    scopes = models.JSONField(default=list)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    rate_per_min = models.PositiveIntegerField(blank=True, null=True)
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(blank=True, null=True)
 
     @staticmethod
     def generate_key() -> str:
-        return "ek_" + secrets.token_urlsafe(36)
+        return "ak_live_" + secrets.token_urlsafe(36)
 
-    def save(self, *args, **kwargs):
-        if not self.key:
-            self.key = self.generate_key()
-        super().save(*args, **kwargs)
+    @staticmethod
+    def hash_key(raw_key: str) -> str:
+        return hashlib.sha256(raw_key.encode()).hexdigest()
+
+    @classmethod
+    def create_for_account(cls, account, *, name: str = "default", scopes: list[str] | None = None):
+        """Create a new key. Returns (instance, plaintext) — plaintext is shown once."""
+        raw = cls.generate_key()
+        obj = cls.objects.create(
+            account=account,
+            name=name,
+            key_hash=cls.hash_key(raw),
+            key_prefix="ak_live_",
+            last4=raw[-4:],
+            scopes=scopes or ["messages:send"],
+        )
+        return obj, raw
+
+    @classmethod
+    def authenticate(cls, raw_key: str):
+        """Look up an active key by hash, falling back to the legacy plaintext column."""
+        if not raw_key:
+            return None
+        by_hash = cls.objects.filter(
+            key_hash=cls.hash_key(raw_key), is_active=True
+        ).select_related("account").first()
+        if by_hash is not None:
+            return by_hash
+        return cls.objects.filter(key=raw_key, is_active=True).select_related("account").first()
 
     def touch(self):
         self.last_used_at = timezone.now()

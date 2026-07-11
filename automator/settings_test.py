@@ -25,3 +25,9 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # stay observable via mail.outbox in tests.
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# No real Redis available in tests — LocMemCache is fine since each test
+# process/run doesn't need throttling state shared across workers.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+}

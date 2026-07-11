@@ -45,9 +45,17 @@
       <button class="btn btn-ghost btn-sm" type="submit">Regenerate</button>
     </form>
   </div>
-  {% if api_key %}
-    {% include "components/copy_field.html" with value=api_key.key label="Copy" %}
-    <p class="help mt-2">Send with header <code>X-Api-Key</code> to <code>POST /email/send/</code>.</p>
+  {% if new_api_key_plaintext %}
+    <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 mb-3">
+      <p class="text-sm font-medium text-amber-800">Copy your key now — it won't be shown again.</p>
+      <div class="mt-2">
+        {% include "components/copy_field.html" with value=new_api_key_plaintext label="Copy" %}
+      </div>
+    </div>
+    <p class="help mt-2">Send with header <code>X-Api-Key</code> to <code>POST /api/v1/messages</code> (legacy path: <code>POST /email/send/</code>).</p>
+  {% elif api_key %}
+    <p class="text-sm text-gray-600 font-mono">{{ api_key.key_prefix }}••••{{ api_key.last4 }}</p>
+    <p class="help mt-2">Send with header <code>X-Api-Key</code> to <code>POST /api/v1/messages</code> (legacy path: <code>POST /email/send/</code>). Regenerate to see the full key again.</p>
   {% else %}
     <p class="text-sm text-gray-400">No API key yet — generate one to start sending.</p>
   {% endif %}
