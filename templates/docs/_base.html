@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} — Developer docs — {{ site.app_name|default:"Automator" }}{% endblock %}
+
+{% block content %}
+<style>
+  /* Scoped prose styling for docs pages (mirrors help/article.html). */
+  .docs-body { color: #46516B; font-size: 0.95rem; line-height: 1.7; }
+  .docs-body > * + * { margin-top: 1rem; }
+  .docs-body h2 { font-size: 1.15rem; font-weight: 600; color: #12182B; margin-top: 2rem; }
+  .docs-body h3 { font-size: 1rem; font-weight: 600; color: #12182B; margin-top: 1.5rem; }
+  .docs-body ul, .docs-body ol { padding-left: 1.25rem; }
+  .docs-body ul { list-style: disc; }
+  .docs-body ol { list-style: decimal; }
+  .docs-body li + li { margin-top: 0.35rem; }
+  .docs-body a { color: #35517D; text-decoration: underline; text-underline-offset: 2px; }
+  .docs-body code { background: #F3F5F7; border-radius: 0.375rem; padding: 0.1rem 0.35rem;
+                     font-size: 0.85em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .docs-body pre { background: #12182B; color: #E7ECF5; border-radius: 0.75rem; padding: 1rem 1.1rem;
+                    overflow-x: auto; font-size: 0.82rem; line-height: 1.6; }
+  .docs-body pre code { background: none; padding: 0; color: inherit; }
+  .docs-body strong { color: #12182B; font-weight: 600; }
+  .docs-body table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .docs-body th, .docs-body td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #E8EDF3; vertical-align: top; }
+  .docs-body th { color: #657089; font-weight: 600; }
+  .docs-nav a.active { color: #12182B; font-weight: 600; }
+</style>
+
+<div class="max-w-6xl mx-auto grid lg:grid-cols-[14rem,1fr] gap-10">
+  <nav class="docs-nav text-sm space-y-1">
+    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Developer docs</p>
+    {% for p in pages %}
+      <a href="{% if p.slug == 'index' %}{% url 'docs' %}{% else %}{% url 'docs-page' p.slug %}{% endif %}"
+         class="block py-1 text-gray-500 hover:text-gray-900 {% if p.slug == page.slug %}active{% endif %}">
+        {{ p.title }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="min-w-0">
+    <p class="text-xs font-semibold uppercase tracking-wider text-brand-600 mb-2">Developer docs</p>
+    <h1 class="text-2xl font-semibold tracking-tight mb-2">{{ page.title }}</h1>
+    <p class="text-gray-500 mb-8">{{ page.summary }}</p>
+
+    <div class="docs-body">
+      {% block docs_content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

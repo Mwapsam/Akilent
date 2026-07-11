@@ -1,0 +1,23 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<p>Every error response from <code>/api/v1/</code> uses the same envelope:</p>
+<pre><code>{
+  "error": {
+    "code": "unverified_domain",
+    "message": "'yourdomain.com' is not a verified sending domain for this account"
+  }
+}</code></pre>
+
+<table>
+  <tr><th>Status</th><th>Code</th><th>Meaning</th></tr>
+  <tr><td>400</td><td><code>invalid</code></td><td>Request validation failed — check the message for which field.</td></tr>
+  <tr><td>401</td><td><code>authentication_failed</code></td><td>Missing or invalid API key.</td></tr>
+  <tr><td>403</td><td><code>unverified_domain</code></td><td>The <code>from</code> address's domain isn't verified for your account.</td></tr>
+  <tr><td>403</td><td><code>email_apis</code></td><td>Your plan doesn't include the REST API &amp; SMTP relay.</td></tr>
+  <tr><td>403</td><td><code>emails</code></td><td>Monthly send volume cap reached — upgrade or wait for the next period.</td></tr>
+  <tr><td>404</td><td>—</td><td>Unknown API version (e.g. requesting <code>/api/v2/...</code> before it exists).</td></tr>
+  <tr><td>429</td><td>—</td><td>Per-key request-rate limit exceeded. Check <code>Retry-After</code>.</td></tr>
+</table>
+
+<p>See <a href="{% url 'docs-page' 'rate-limits' %}">Rate limits</a> for the difference between the 429 (rate) and 403 <code>emails</code> (volume) cases — they're two separate limits.</p>
+{% endblock %}

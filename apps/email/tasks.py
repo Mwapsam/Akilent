@@ -4,29 +4,36 @@ All heavy provider calls are handled here rather than in Django views, so HTTP
 requests return immediately and retries happen transparently.
 
 Queues:
-  email    — mailbox/domain/alias provisioning tasks
-  outbound — send_email
-  celery   — prune_* maintenance tasks
+  email     — mailbox/domain/alias provisioning tasks
+  outbound  — send_email
+  webhooks  — deliver_webhook
+  celery    — prune_* maintenance tasks
 
 ProvisioningJob is created by the caller before dispatching the task, then
 updated here as the task runs (PENDING → RUNNING → SUCCESS | FAILED | RETRYING).
 """
 from __future__ import annotations
 
+import json
 import logging
 
+import requests
 from celery import shared_task
 from django.utils import timezone
 
 from apps.email.exceptions import EmailProviderError
-from apps.email.models import EmailMessage, Mailbox, ProvisioningJob
+from apps.email.models import EmailMessage, Mailbox, ProvisioningJob, WebhookDelivery
 from apps.email.providers import get_mail_provider
 from apps.email.services import MailboxService, smtp_send
+from apps.email.webhooks import EVENT_HEADER, SIGNATURE_HEADER, build_signature_header
 
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 60  # seconds
+
+_WEBHOOK_MAX_RETRIES = 6
+_WEBHOOK_TIMEOUT_SECONDS = 10
 
 
 # ── Mailbox provisioning ──────────────────────────────────────────────────────
@@ -311,6 +318,62 @@ def send_email(
                     email_message_id,
                 )
         raise self.retry(exc=exc)
+
+
+# ── Webhook delivery ──────────────────────────────────────────────────────────
+
+
+@shared_task(
+    bind=True,
+    max_retries=_WEBHOOK_MAX_RETRIES,
+    queue="webhooks",
+)
+def deliver_webhook(self, delivery_id: int) -> None:
+    """POST a signed event payload to a WebhookEndpoint, with exponential backoff."""
+    try:
+        delivery = WebhookDelivery.objects.select_related("endpoint").get(pk=delivery_id)
+    except WebhookDelivery.DoesNotExist:
+        logger.error("deliver_webhook: WebhookDelivery %s not found", delivery_id)
+        return
+
+    if delivery.status == WebhookDelivery.Status.SUCCEEDED:
+        return
+
+    endpoint = delivery.endpoint
+    body = json.dumps(delivery.payload).encode()
+    signature = build_signature_header(endpoint.signing_secret, body)
+
+    try:
+        response = requests.post(
+            endpoint.url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                SIGNATURE_HEADER: signature,
+                EVENT_HEADER: delivery.event_type,
+            },
+            timeout=_WEBHOOK_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        delivery.mark_succeeded(response.status_code)
+    except Exception as exc:
+        # requests.HTTPError carries a .response with a status code; a
+        # connection/timeout failure has none.
+        response_obj = getattr(exc, "response", None)
+        response_code = response_obj.status_code if response_obj is not None else None
+
+        is_last = self.request.retries >= _WEBHOOK_MAX_RETRIES
+        delivery.mark_failed(response_code, exhausted=is_last)
+        if is_last:
+            endpoint.last_error = str(exc)[:2000]
+            endpoint.save(update_fields=["last_error"])
+            logger.error(
+                "deliver_webhook: exhausted retries for delivery %s (%s): %s",
+                delivery_id, delivery.event_type, exc,
+            )
+            return
+        countdown = _RETRY_DELAY * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=countdown)
 
 
 # ── Maintenance ───────────────────────────────────────────────────────────────

@@ -1,0 +1,41 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<p>Two independent limits apply to <code>/api/v1/messages</code> — hitting either one gets rejected, but for different reasons and with a different status code.</p>
+
+<h2>Request rate (per minute)</h2>
+<p>
+  Each API key is limited to a number of requests per minute, set by your
+  plan (and overridable per-key). Exceeding it returns:
+</p>
+<pre><code>429 Too Many Requests
+Retry-After: 42</code></pre>
+<p>This protects against bursts and misbehaving clients — it resets every minute and has nothing to do with how many emails you're allowed to send this month.</p>
+
+<h2>Monthly send volume</h2>
+<p>
+  Separately, your plan caps how many emails you can send per calendar
+  month. Reaching it returns:
+</p>
+<pre><code>403 Forbidden
+{
+  "error": {
+    "code": "emails",
+    "message": "Monthly email limit of 10000 reached. Please upgrade your plan."
+  }
+}</code></pre>
+<p>
+  This is reserved at accept time — a message that's queued counts against
+  the cap immediately, and if it ultimately fails to send, the reservation is
+  refunded so you aren't charged for mail that never went out.
+</p>
+
+<h2>SMTP relay</h2>
+<p>
+  Neither limit above applies to <a href="{% url 'docs-page' 'smtp' %}">SMTP relay</a> —
+  the mail server accepts and delivers those messages directly, without
+  passing through Akilent's application layer, so today they aren't counted
+  against your monthly volume cap or reflected in the dashboard's usage
+  numbers. Treat SMTP relay as currently unmetered; this will change in a
+  future update.
+</p>
+{% endblock %}

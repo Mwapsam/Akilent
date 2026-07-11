@@ -1,0 +1,69 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<p>
+  Subscribe an endpoint on the <a href="/email/webhooks/">Webhooks</a> page to
+  receive a signed <code>POST</code> whenever a subscribed event happens.
+</p>
+
+<h2>Events</h2>
+<table>
+  <tr><th>Event</th><th>Fires when</th></tr>
+  <tr><td><code>message.sent</code></td><td>A message you sent was handed off to the mail server successfully.</td></tr>
+  <tr><td><code>message.failed</code></td><td>Sending a message failed after retries were exhausted.</td></tr>
+  <tr><td><code>message.opened</code></td><td>The recipient opened the email (tracking pixel).</td></tr>
+  <tr><td><code>message.clicked</code></td><td>The recipient clicked a tracked link.</td></tr>
+</table>
+<p>
+  <code>message.delivered</code> and <code>message.bounced</code> aren't
+  available yet — "sent" means handed off to the mail server, not confirmed
+  delivery to the recipient's inbox.
+</p>
+
+<h2>Payload</h2>
+<pre><code>POST https://yourapp.com/webhooks/akilent
+Content-Type: application/json
+X-Akilent-Event: message.sent
+X-Akilent-Signature: t=1730000000,v1=5257a869e7...
+
+{
+  "event": "message.sent",
+  "data": {
+    "id": 4821,
+    "from": "billing@yourdomain.com",
+    "to": "customer@example.com",
+    "subject": "Payment received",
+    "status": "sent"
+  }
+}</code></pre>
+
+<h2>Verifying the signature</h2>
+<p>
+  <code>X-Akilent-Signature</code> is <code>t=&lt;unix timestamp&gt;,v1=&lt;hex HMAC-SHA256&gt;</code>
+  computed over <code>"&lt;timestamp&gt;.&lt;raw request body&gt;"</code>, using
+  your endpoint's signing secret (shown on the Webhooks page). Always verify
+  against the raw bytes, before any JSON parsing.
+</p>
+<pre><code>import hashlib
+import hmac
+import time
+
+def verify_akilent_signature(secret: str, raw_body: bytes, signature_header: str, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in signature_header.split(","))
+    timestamp = int(parts["t"])
+    received = parts["v1"]
+
+    if abs(time.time() - timestamp) > tolerance:
+        return False  # too old — possible replay
+
+    signed_payload = f"{timestamp}.".encode() + raw_body
+    expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, received)</code></pre>
+
+<h2>Retries</h2>
+<p>
+  A non-2xx response (or a connection failure/timeout) is retried with
+  exponential backoff, up to several attempts over roughly an hour, before
+  the delivery is marked <strong>exhausted</strong>. Failed and exhausted
+  deliveries can be resent manually from the Webhooks page.
+</p>
+{% endblock %}

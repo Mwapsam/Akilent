@@ -1,0 +1,46 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<p>
+  If you'd rather send through your own mail library or an existing SMTP
+  integration instead of calling the HTTP API, provision a relay credential
+  and point it at Akilent's SMTP endpoint.
+</p>
+
+<h2>1. Provision a credential</h2>
+<p>
+  On the <a href="/email/domains/">Domains</a> page, each verified domain has
+  an "SMTP relay" section — click <strong>Create SMTP relay credential</strong>.
+  The password is shown once; copy it immediately, it can't be retrieved again
+  (only rotated or revoked).
+</p>
+<p>
+  Credentials are scoped to one verified domain each — a credential for
+  <code>mail.yourdomain.com</code> can't send as a different domain your
+  account also owns, even if that domain is verified too. Provision a
+  separate credential per domain you want to relay from.
+</p>
+
+<h2>2. Connect</h2>
+<pre><code>Host:     {{ smtp_relay_host }}
+Port:     {{ smtp_relay_port }}
+Security: STARTTLS
+Username: relay@yourdomain.com   (shown when you create the credential)
+Password: (the one-time secret from step 1)</code></pre>
+
+<h2>3. Send</h2>
+<p>
+  From here it's standard SMTP AUTH — configure your language's mail library
+  (Python's <code>smtplib</code>, Node's <code>nodemailer</code>, PHP's
+  <code>PHPMailer</code>, etc.) with the host/port/username/password above.
+  The <code>From</code> address on messages you send must belong to the
+  credential's domain.
+</p>
+
+<h2>Rotating or revoking</h2>
+<p>
+  Use <strong>Rotate</strong> to issue a new password without changing the
+  username (update your configured secret afterward), or
+  <strong>Revoke</strong> to disable the credential entirely. Both take
+  effect immediately.
+</p>
+{% endblock %}

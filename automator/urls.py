@@ -44,6 +44,8 @@ urlpatterns = [
     ),
     path("help/", core_views.help_index, name="help"),
     path("help/<slug:slug>/", core_views.help_article, name="help-article"),
+    path("docs/", core_views.docs_page, name="docs"),
+    path("docs/<slug:slug>/", core_views.docs_page, name="docs-page"),
     path("", include("apps.accounts.urls")),
     path("email/", include("apps.email.urls")),
     path("billing/", include("apps.billing.urls", namespace="billing")),

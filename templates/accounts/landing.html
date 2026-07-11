@@ -510,10 +510,10 @@
             and integrate in minutes.
           </p>
           <ul class="mt-6 space-y-3 text-sm">
-            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">API access</span> — REST endpoints for WhatsApp and email</span></li>
-            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">Webhooks</span> — delivery and status callbacks in real time</span></li>
-            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><a href="{% url 'help' %}" class="text-white font-medium underline decoration-[#26314A] underline-offset-4 hover:decoration-[#1FAF9C]">Documentation</a> — guides for rapid integration</span></li>
-            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">SDKs</span> — client libraries and integration support</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">API access</span> — a versioned REST endpoint for transactional email</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">SMTP relay</span> — per-domain credentials to send directly over SMTP</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><span class="text-white font-medium">Webhooks</span> — signed delivery, open, and click callbacks in real time</span></li>
+            <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-[#1FAF9C] shrink-0"></span><span class="text-mid"><a href="{% url 'docs' %}" class="text-white font-medium underline decoration-[#26314A] underline-offset-4 hover:decoration-[#1FAF9C]">Documentation</a> — guides and code samples for rapid integration</span></li>
           </ul>
         </div>
 
@@ -526,9 +526,9 @@
 <span class="tok-k">Authorization:</span> Bearer ak_live_•••
 
 {
-  <span class="tok-k">"channel"</span>:   <span class="tok-s">"whatsapp"</span>,
-  <span class="tok-k">"recipient"</span>: <span class="tok-s">"+260971234567"</span>,
-  <span class="tok-k">"template"</span>:  <span class="tok-a">"payment_received"</span>
+  <span class="tok-k">"from"</span>:    <span class="tok-s">"billing@yourdomain.com"</span>,
+  <span class="tok-k">"to"</span>:      <span class="tok-s">"customer@example.com"</span>,
+  <span class="tok-k">"subject"</span>: <span class="tok-a">"Payment received"</span>
 }
 
 <span class="tok-k">→ 202 Accepted</span>  <span class="tok-s">"status": "queued"</span></code></pre>

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Webhooks — Automator{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Webhooks</h1>
+    <p class="text-sm text-gray-500 mt-1">Get signed, real-time callbacks when messages send, fail, or get opened/clicked.</p>
+  </div>
+  <a href="/email/domains/" class="btn btn-secondary btn-sm">
+    {% include "components/icon.html" with name="globe" class="w-4 h-4" %} Domains
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if is_admin %}
+<div class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-3 text-sm text-brand-700">
+  Admin view — showing every tenant's webhook endpoints with full access.
+</div>
+{% endif %}
+
+{% if not webhooks_enabled %}
+<div class="card card-pad mb-6 border-amber-200 bg-amber-50/40">
+  <h2 class="font-semibold flex items-center gap-2">
+    {% include "components/icon.html" with name="key" class="w-4 h-4 text-amber-500" %} Webhooks
+  </h2>
+  <p class="text-sm text-gray-600 mt-2">Your current plan doesn't include outbound webhooks. <a href="/billing/plans/" class="text-brand-600 font-medium">Upgrade your plan</a> to subscribe an endpoint.</p>
+</div>
+{% else %}
+
+{# Create endpoint #}
+<div class="card card-pad mb-6">
+  <h2 class="font-semibold mb-4">Add an endpoint</h2>
+  <form method="post" action="/email/webhooks/create/" class="grid gap-3">
+    {% csrf_token %}
+    {% include "components/form_field.html" with name="url" label="Endpoint URL" type="url" placeholder="https://yourapp.com/webhooks/akilent" required=True %}
+    <div>
+      <p class="text-xs font-medium text-gray-500 mb-1.5">Events</p>
+      <div class="flex flex-wrap gap-3">
+        {% for slug, label in event_choices %}
+        <label class="inline-flex items-center gap-1.5 text-sm">
+          <input type="checkbox" name="event_types" value="{{ slug }}" class="checkbox">
+          {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <button class="btn btn-primary" type="submit">
+        {% include "components/icon.html" with name="plus" class="w-4 h-4" %} Add endpoint
+      </button>
+    </div>
+  </form>
+</div>
+
+{# Endpoints #}
+<div class="grid gap-3 mb-8">
+  {% for e in endpoints %}
+  <div class="card card-pad">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="font-medium text-gray-900 break-all">{{ e.url }}</p>
+        <p class="text-xs text-gray-500 mt-1">{{ e.event_types|join:", " }}</p>
+        <p class="text-xs text-gray-400 mt-1">Signing secret: <code>{{ e.signing_secret }}</code></p>
+        {% if e.last_error %}<p class="text-xs text-red-600 mt-1">Last error: {{ e.last_error|truncatechars:200 }}</p>{% endif %}
+      </div>
+      <form method="post" action="/email/webhooks/{{ e.pk }}/delete/" onsubmit="return confirm('Delete this webhook endpoint?');">
+        {% csrf_token %}
+        <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% empty %}
+  <div class="card">
+    {% include "components/empty_state.html" with icon="chat" title="No webhook endpoints yet" message="Add one above to start receiving delivery, bounce, open, and click callbacks." %}
+  </div>
+  {% endfor %}
+</div>
+
+{# Recent deliveries #}
+<div>
+  <h2 class="font-semibold mb-3">Recent deliveries</h2>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>Event</th><th>Endpoint</th><th>Status</th><th>Response</th><th>Attempts</th><th>When</th><th class="text-right">Actions</th>
+      </tr></thead>
+      <tbody>
+        {% for d in deliveries %}
+        <tr>
+          <td>{{ d.event_type }}</td>
+          <td class="max-w-[16rem] truncate">{{ d.endpoint.url }}</td>
+          <td>
+            {% if d.status == 'succeeded' %}<span class="badge badge-success">Succeeded</span>
+            {% elif d.status == 'exhausted' %}<span class="badge badge-danger">Exhausted</span>
+            {% elif d.status == 'failed' %}<span class="badge badge-warning">Retrying</span>
+            {% else %}<span class="badge badge-neutral">Pending</span>{% endif %}
+          </td>
+          <td>{{ d.response_code|default:"—" }}</td>
+          <td>{{ d.attempt_count }}</td>
+          <td>{{ d.created_at|date:"M j, H:i" }}</td>
+          <td class="text-right">
+            {% if d.status != 'succeeded' and d.status != 'pending' %}
+            <form method="post" action="/email/webhooks/deliveries/{{ d.pk }}/resend/" class="inline">
+              {% csrf_token %}
+              <button class="btn btn-ghost btn-sm" type="submit">Resend</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-gray-400 py-8">No deliveries yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

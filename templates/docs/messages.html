@@ -1,0 +1,58 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<h2>Request</h2>
+<pre><code>POST /api/v1/messages
+Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx
+Content-Type: application/json
+
+{
+  "from": "billing@yourdomain.com",
+  "to": "customer@example.com",
+  "subject": "Payment received",
+  "text": "Thanks for your payment.",
+  "html": "&lt;p&gt;Thanks for your payment.&lt;/p&gt;"
+}</code></pre>
+
+<table>
+  <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+  <tr><td><code>from</code></td><td>Yes</td><td>Must be on a <a href="/email/domains/">verified sending domain</a> for your account.</td></tr>
+  <tr><td><code>to</code></td><td>Yes</td><td>A single recipient address.</td></tr>
+  <tr><td><code>subject</code></td><td>No</td><td>Defaults to empty.</td></tr>
+  <tr><td><code>text</code></td><td>No</td><td>Plain-text body.</td></tr>
+  <tr><td><code>html</code></td><td>No</td><td>HTML body, sent as a MIME alternative alongside <code>text</code>.</td></tr>
+</table>
+
+<h2>Response</h2>
+<p>A successful call queues the message and returns immediately — sending happens asynchronously.</p>
+<pre><code>202 Accepted
+{
+  "id": 4821,
+  "status": "queued"
+}</code></pre>
+<p>
+  <code>status</code> reflects the message's state at accept time; it doesn't
+  update on this response as the send completes. Subscribe to
+  <a href="{% url 'docs-page' 'webhooks' %}">webhooks</a> for
+  <code>message.sent</code> / <code>message.failed</code> outcomes.
+</p>
+
+<h2>Errors</h2>
+<p>See the full <a href="{% url 'docs-page' 'errors' %}">error codes</a> reference. The most common ones for this endpoint:</p>
+<table>
+  <tr><th>Status</th><th>Code</th><th>Cause</th></tr>
+  <tr><td>400</td><td><code>invalid</code></td><td>Missing/malformed <code>from</code> or <code>to</code>.</td></tr>
+  <tr><td>401</td><td><code>authentication_failed</code></td><td>Missing or invalid API key.</td></tr>
+  <tr><td>403</td><td><code>unverified_domain</code></td><td><code>from</code>'s domain isn't verified for your account.</td></tr>
+  <tr><td>403</td><td><code>email_apis</code></td><td>Your plan doesn't include the API &amp; SMTP relay.</td></tr>
+  <tr><td>403</td><td><code>emails</code></td><td>Monthly send volume cap reached.</td></tr>
+  <tr><td>429</td><td>—</td><td>Per-minute rate limit exceeded; see <code>Retry-After</code>.</td></tr>
+</table>
+
+<h2>A note on the legacy endpoint</h2>
+<p>
+  <code>POST /email/send/</code> (the same request/response shape, header
+  <code>X-Api-Key</code> only) still works and shares this exact send logic —
+  it's kept alive for existing integrations, but new integrations should use
+  <code>/api/v1/messages</code>.
+</p>
+{% endblock %}

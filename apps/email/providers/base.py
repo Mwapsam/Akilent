@@ -229,6 +229,33 @@ class EmailProvider(ABC):
     def list_aliases(self, domain: str) -> list[AliasInfo]:
         """Return all aliases in the given domain."""
 
+    # ── SMTP relay identity ───────────────────────────────────────────────
+    # A per-tenant SMTP AUTH identity is just a dedicated mailbox-like
+    # account under the tenant's domain — mail servers don't expose a
+    # distinct "API relay" primitive, so this is built entirely on the
+    # mailbox lifecycle above. Concrete (not abstract): any provider that
+    # implements create_mailbox/change_password/delete_mailbox gets SMTP
+    # relay identities for free, with no per-provider override needed.
+
+    def create_relay_identity(
+        self, email: str, password: str, *, description: str = ""
+    ) -> MailboxInfo:
+        """Provision a dedicated SMTP AUTH identity (not a real inbox) for API relay."""
+        return self.create_mailbox(
+            email,
+            password,
+            name="API relay",
+            description=description or "Akilent SMTP relay identity",
+        )
+
+    def rotate_relay_secret(self, email: str, new_password: str) -> OperationResult:
+        """Rotate the SMTP AUTH password for a relay identity."""
+        return self.change_password(email, new_password)
+
+    def delete_relay_identity(self, email: str) -> OperationResult:
+        """Permanently remove a relay identity."""
+        return self.delete_mailbox(email)
+
     # ── Legacy compatibility helpers ──────────────────────────────────────
     # Concrete implementations of the old 8-method interface so existing
     # views and tasks continue to work unchanged while the migration proceeds.

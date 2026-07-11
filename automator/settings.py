@@ -315,6 +315,7 @@ CELERY_TASK_ROUTES = {
     "apps.email.tasks.set_quota_async": {"queue": "email"},
     "apps.email.tasks.rotate_dkim_async": {"queue": "email"},
     "apps.email.tasks.provision_domain_async": {"queue": "email"},
+    "apps.email.tasks.deliver_webhook": {"queue": "webhooks"},
     # Maintenance
     "apps.email.tasks.prune_email_logs": {"queue": "celery"},
     "apps.email.tasks.prune_tracking_tokens": {"queue": "celery"},

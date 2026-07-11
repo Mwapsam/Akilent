@@ -1,0 +1,31 @@
+{% extends "docs/_base.html" %}
+{% block docs_content %}
+<h2>API keys</h2>
+<p>
+  Generate a key from the <a href="/email/domains/">Domains</a> page. Keys look
+  like <code>ak_live_&hellip;</code> and are shown to you <strong>once</strong>,
+  at creation — Akilent stores only a hash, not the plaintext, so if you lose
+  it you'll need to regenerate rather than retrieve it.
+</p>
+<p>Send it on every request as either header:</p>
+<pre><code>X-Api-Key: ak_live_xxxxxxxxxxxxxxxxxxxxxxxx
+# or
+Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+<p>
+  Regenerating a key immediately deactivates the previous one — there's no
+  overlap window today, so update all callers before you rotate.
+</p>
+<p>
+  A missing or invalid key returns <code>401</code> with
+  <code>{"error": {"code": "authentication_failed", ...}}</code>. Repeated
+  invalid attempts from the same client are temporarily locked out
+  (<code>429</code>) as a brute-force guard.
+</p>
+
+<h2>SMTP relay credentials</h2>
+<p>
+  Separate from API keys — see <a href="{% url 'docs-page' 'smtp' %}">SMTP relay</a>
+  for how to provision one. These authenticate an SMTP connection directly
+  against the mail server, not calls to <code>/api/v1/</code>.
+</p>
+{% endblock %}

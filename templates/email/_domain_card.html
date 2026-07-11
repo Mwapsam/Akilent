@@ -41,6 +41,43 @@ re-submits the data-dns-check form until the domain verifies itself.{% endcommen
     </div>
   </div>
 
+  {# SMTP relay credential #}
+  {% if d.is_verified and email_apis_enabled %}
+  <div class="mt-4 rounded-xl border border-border bg-gray-50/50 p-3">
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <p class="text-xs font-medium text-gray-500">SMTP relay — {{ smtp_relay_host }}:{{ smtp_relay_port }}</p>
+    </div>
+    {% for cred in d.smtp_credentials.all %}
+      {% if new_smtp_secret.credential_id == cred.pk %}
+        <div class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 mb-2">
+          <p class="text-xs font-medium text-amber-800">Copy this password now — it won't be shown again.</p>
+          <p class="text-xs text-gray-600 mt-1">Username: <code>{{ cred.username }}</code></p>
+          <div class="mt-1">{% include "components/copy_field.html" with value=new_smtp_secret.secret label="Copy" %}</div>
+        </div>
+      {% else %}
+        <p class="text-xs text-gray-600">
+          <code>{{ cred.username }}</code> · password ends in <code>{{ cred.last4 }}</code>
+        </p>
+      {% endif %}
+      <div class="flex items-center gap-1.5 mt-2">
+        <form data-ajax method="post" action="/email/smtp/{{ cred.pk }}/rotate/" data-confirm="Rotate this SMTP password? The old one stops working immediately." data-confirm-label="Rotate">
+          {% csrf_token %}
+          <button class="btn btn-ghost btn-sm" type="submit">Rotate</button>
+        </form>
+        <form data-ajax method="post" action="/email/smtp/{{ cred.pk }}/revoke/" data-confirm="Revoke SMTP relay access for {{ cred.username }}?" data-confirm-danger data-confirm-label="Revoke">
+          {% csrf_token %}
+          <button class="btn btn-danger-ghost btn-sm" type="submit">Revoke</button>
+        </form>
+      </div>
+    {% empty %}
+      <form method="post" action="/email/domains/{{ d.pk }}/smtp/create/">
+        {% csrf_token %}
+        <button class="btn btn-secondary btn-sm" type="submit">Create SMTP relay credential</button>
+      </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# Guidance banner #}
   {% if d.is_verified %}
     <div class="mt-3 flex items-center gap-2 text-sm text-green-700">

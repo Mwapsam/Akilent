@@ -11,10 +11,16 @@
       {% include "components/help_link.html" with slug="dns-setup" text="How to add DNS records" %}
     </div>
   </div>
-  <a href="/email/mailboxes/" class="btn btn-secondary btn-sm">
-    {% include "components/icon.html" with name="inbox" class="w-4 h-4" %}
-    Mailboxes &amp; aliases
-  </a>
+  <div class="flex items-center gap-2">
+    <a href="/email/webhooks/" class="btn btn-secondary btn-sm">
+      {% include "components/icon.html" with name="chat" class="w-4 h-4" %}
+      Webhooks
+    </a>
+    <a href="/email/mailboxes/" class="btn btn-secondary btn-sm">
+      {% include "components/icon.html" with name="inbox" class="w-4 h-4" %}
+      Mailboxes &amp; aliases
+    </a>
+  </div>
 </div>
 {% endblock %}
 

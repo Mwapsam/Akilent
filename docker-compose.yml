@@ -58,7 +58,7 @@ services:
   celery_worker:
     build: .
     # command: celery -A automator worker -l info -Q celery,email,whatsapp,outbound,bitrix
-    command: celery -A automator worker -l info -Q celery,email,outbound
+    command: celery -A automator worker -l info -Q celery,email,outbound,webhooks
     restart: unless-stopped
     volumes:
       - .:/app

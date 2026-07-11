@@ -15,11 +15,13 @@ from .alias import AliasService
 from .domain import DomainService
 from .mailbox import MailboxService
 from .send import apply_tracking, smtp_send
+from .smtp_credential import SmtpCredentialService
 
 __all__ = [
     "DomainService",
     "MailboxService",
     "AliasService",
+    "SmtpCredentialService",
     "smtp_send",
     "apply_tracking",
 ]

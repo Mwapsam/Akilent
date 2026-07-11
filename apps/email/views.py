@@ -21,9 +21,12 @@ from apps.email.models import (
     EmailTrackingEvent,
     EmailTrackingToken,
     Mailbox,
+    SmtpCredential,
+    WebhookDelivery,
+    WebhookEndpoint,
 )
 from apps.email.providers import MailProviderError
-from apps.email.services import AliasService, DomainService, MailboxService
+from apps.email.services import AliasService, DomainService, MailboxService, SmtpCredentialService
 from apps.email.tasks import provision_mailbox
 
 logger = logging.getLogger(__name__)
@@ -57,9 +60,13 @@ def _ajax_error(message: str, status: int = 400):
 
 
 def _domain_card(request, record):
+    from django.conf import settings
     return render(request, "email/_domain_card.html", {
         "d": record,
         "is_admin": _is_admin(request),
+        "email_apis_enabled": _require_email_apis(request, record.account),
+        "smtp_relay_host": settings.SMTP_RELAY_HOST,
+        "smtp_relay_port": settings.SMTP_RELAY_PORT,
     })
 
 
@@ -81,7 +88,18 @@ def domains_list(request):
     if account is None and not admin:
         return redirect("dashboard")
 
-    domains = _scoped(EmailDomain.objects, request, account).select_related("account")
+    from django.db.models import Prefetch
+
+    domains = (
+        _scoped(EmailDomain.objects, request, account)
+        .select_related("account")
+        .prefetch_related(
+            Prefetch(
+                "smtp_credentials",
+                queryset=SmtpCredential.objects.filter(is_active=True),
+            )
+        )
+    )
     recent = _scoped(EmailMessage.objects, request, account)[:25]
     api_key = (
         EmailApiKey.objects.filter(account=account, is_active=True).first()
@@ -89,9 +107,12 @@ def domains_list(request):
         else None
     )
     new_api_key_plaintext = request.session.pop("new_api_key", None) if account else None
+    new_smtp_secret = request.session.pop("new_smtp_secret", None) if account else None
     from apps.billing.limits import LimitChecker
 
     email_apis_enabled = admin or (account and LimitChecker(account).has_feature("email_apis"))
+
+    from django.conf import settings
 
     return render(request, "email/domains.html", {
         "account": account,
@@ -99,8 +120,11 @@ def domains_list(request):
         "domains": domains,
         "api_key": api_key,
         "new_api_key_plaintext": new_api_key_plaintext,
+        "new_smtp_secret": new_smtp_secret,
         "recent": recent,
         "email_apis_enabled": email_apis_enabled,
+        "smtp_relay_host": settings.SMTP_RELAY_HOST,
+        "smtp_relay_port": settings.SMTP_RELAY_PORT,
         "accounts": Account.objects.order_by("company_name") if admin else None,
     })
 
@@ -273,6 +297,176 @@ def key_create(request):
     request.session["new_api_key"] = raw_key
     messages.success(request, "New API key generated — copy it now, it won't be shown again.")
     return redirect("email-domains")
+
+
+# --- SMTP relay credentials -----------------------------------------------------
+
+def _require_email_apis(request, account) -> bool:
+    if _is_admin(request):
+        return True
+    from apps.billing.limits import LimitChecker
+    return LimitChecker(account).has_feature("email_apis")
+
+
+@login_required
+@require_POST
+def smtp_create(request, pk):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    domain = get_object_or_404(_scoped(EmailDomain.objects, request, account), pk=pk)
+    if not domain.is_verified:
+        messages.error(request, f"{domain.domain} must be verified before creating an SMTP relay credential.")
+        return redirect("email-domains")
+    if not _require_email_apis(request, domain.account):
+        messages.error(request, "Your plan does not include the email API & SMTP relay. Upgrade to enable it.")
+        return redirect("email-domains")
+    if domain.smtp_credentials.filter(is_active=True).exists():
+        messages.error(request, f"{domain.domain} already has an active SMTP relay credential.")
+        return redirect("email-domains")
+
+    try:
+        credential, secret = SmtpCredentialService(domain.account, actor=request.user).provision(domain)
+    except MailProviderError as exc:
+        messages.error(request, f"Could not create SMTP relay credential: {exc}")
+        return redirect("email-domains")
+
+    request.session["new_smtp_secret"] = {"credential_id": credential.pk, "secret": secret}
+    messages.success(request, "SMTP relay credential created — copy the password now, it won't be shown again.")
+    return redirect("email-domains")
+
+
+@login_required
+@require_POST
+def smtp_rotate(request, pk):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
+    try:
+        secret = SmtpCredentialService(credential.account, actor=request.user).rotate(credential)
+    except MailProviderError as exc:
+        messages.error(request, f"Could not rotate SMTP relay credential: {exc}")
+        return redirect("email-domains")
+
+    request.session["new_smtp_secret"] = {"credential_id": credential.pk, "secret": secret}
+    messages.success(request, "SMTP relay password rotated — copy it now, it won't be shown again.")
+    return redirect("email-domains")
+
+
+@login_required
+@require_POST
+def smtp_revoke(request, pk):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
+    try:
+        SmtpCredentialService(credential.account, actor=request.user).revoke(credential)
+    except MailProviderError as exc:
+        messages.error(request, f"Could not revoke SMTP relay credential: {exc}")
+        return redirect("email-domains")
+
+    messages.success(request, f"SMTP relay credential for {credential.username} revoked.")
+    return redirect("email-domains")
+
+
+# --- Webhooks -------------------------------------------------------------------
+
+@login_required
+def webhooks_list(request):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    endpoints = _scoped(WebhookEndpoint.objects, request, account)
+    deliveries = WebhookDelivery.objects.filter(
+        endpoint__in=endpoints
+    ).select_related("endpoint")[:50]
+    from apps.billing.limits import LimitChecker
+
+    webhooks_enabled = admin or (account and LimitChecker(account).has_feature("outbound_webhooks"))
+
+    return render(request, "email/webhooks.html", {
+        "account": account,
+        "is_admin": admin,
+        "endpoints": endpoints,
+        "deliveries": deliveries,
+        "webhooks_enabled": webhooks_enabled,
+        "event_choices": WebhookEndpoint.EVENT_CHOICES,
+    })
+
+
+@login_required
+@require_POST
+def webhook_create(request):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    if not admin:
+        from apps.billing.limits import LimitChecker
+        if not LimitChecker(account).has_feature("outbound_webhooks"):
+            messages.error(request, "Your plan does not include outbound webhooks. Upgrade to enable them.")
+            return redirect("email-webhooks")
+
+    url = (request.POST.get("url") or "").strip()
+    valid_events = {slug for slug, _ in WebhookEndpoint.EVENT_CHOICES}
+    event_types = [e for e in request.POST.getlist("event_types") if e in valid_events]
+
+    if not url:
+        messages.error(request, "A URL is required.")
+        return redirect("email-webhooks")
+    if not event_types:
+        messages.error(request, "Select at least one event to subscribe to.")
+        return redirect("email-webhooks")
+
+    WebhookEndpoint.objects.create(account=account, url=url, event_types=event_types)
+    messages.success(request, "Webhook endpoint created.")
+    return redirect("email-webhooks")
+
+
+@login_required
+@require_POST
+def webhook_delete(request, pk):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    endpoint = get_object_or_404(_scoped(WebhookEndpoint.objects, request, account), pk=pk)
+    endpoint.delete()
+    messages.success(request, "Webhook endpoint deleted.")
+    return redirect("email-webhooks")
+
+
+@login_required
+@require_POST
+def webhook_redeliver(request, pk):
+    from apps.email.tasks import deliver_webhook
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    delivery = get_object_or_404(
+        WebhookDelivery.objects.filter(endpoint__in=_scoped(WebhookEndpoint.objects, request, account)),
+        pk=pk,
+    )
+    delivery.status = WebhookDelivery.Status.PENDING
+    delivery.save(update_fields=["status"])
+    transaction.on_commit(lambda: deliver_webhook.delay(delivery.pk))
+    messages.success(request, "Redelivery queued.")
+    return redirect("email-webhooks")
 
 
 # --- Insights -----------------------------------------------------------------
@@ -587,6 +781,14 @@ def tracking_open(request, token: str):
             ip=request.META.get("REMOTE_ADDR"),
             ua=(request.META.get("HTTP_USER_AGENT") or "")[:512],
         )
+        from apps.email.webhooks import enqueue_event
+
+        enqueue_event(
+            "message.opened",
+            account=t.message.account,
+            message=t.message,
+            data={"id": t.message_id, "to": t.recipient},
+        )
     except EmailTrackingToken.DoesNotExist:
         pass
     return HttpResponse(_TRANSPARENT_GIF, content_type="image/gif")
@@ -604,6 +806,14 @@ def tracking_click(request, token: str):
             url=t.url,
             ip=request.META.get("REMOTE_ADDR"),
             ua=(request.META.get("HTTP_USER_AGENT") or "")[:512],
+        )
+        from apps.email.webhooks import enqueue_event
+
+        enqueue_event(
+            "message.clicked",
+            account=t.message.account,
+            message=t.message,
+            data={"id": t.message_id, "to": t.recipient, "url": t.url},
         )
     except EmailTrackingToken.DoesNotExist:
         pass

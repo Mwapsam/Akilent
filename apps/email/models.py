@@ -335,6 +335,42 @@ class EmailApiKey(models.Model):
         return f"{self.account} :: {self.name}"
 
 
+class SmtpCredential(models.Model):
+    """A per-domain SMTP AUTH identity for direct SMTP relay.
+
+    This is the "SMTP relay" half of the Developer Platform, distinct from
+    the HTTP `POST /api/v1/messages` path — customers who want to send via
+    SMTP directly authenticate with one of these instead of a mailbox
+    password. Provisioned as a dedicated mail-server account (not a real
+    inbox), scoped to one verified domain so a leaked credential can't be
+    used to send as a different domain the same account also owns.
+
+    Unlike EmailApiKey, Django never authenticates SMTP connections itself —
+    the mail server validates SMTP AUTH directly. secret_hash/last4 exist
+    only for local display/audit ("does a credential exist, what's its
+    last4"), not as an auth check performed by this application.
+    """
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="smtp_credentials"
+    )
+    domain = models.ForeignKey(
+        "EmailDomain", on_delete=models.CASCADE, related_name="smtp_credentials"
+    )
+    username = models.EmailField(unique=True)
+    is_active = models.BooleanField(default=True)
+    secret_hash = models.CharField(max_length=64, blank=True, default="")
+    last4 = models.CharField(max_length=4, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.username} ({'active' if self.is_active else 'revoked'})"
+
+
 class Mailbox(models.Model):
     """A real mailbox provisioned on the iRedMail server for a tenant.
 
@@ -436,11 +472,29 @@ class EmailMessage(models.Model):
         self.provider_message_id = provider_message_id or None
         self.sent_at = timezone.now()
         self.save(update_fields=["status", "provider_message_id", "sent_at"])
+        self._enqueue_webhook_event("message.sent")
 
     def mark_failed(self, error: str):
         self.status = self.Status.FAILED
         self.error = (error or "")[:5000]
         self.save(update_fields=["status", "error"])
+        self._enqueue_webhook_event("message.failed")
+
+    def _enqueue_webhook_event(self, event_type: str) -> None:
+        from apps.email.webhooks import enqueue_event
+
+        enqueue_event(
+            event_type,
+            account=self.account,
+            message=self,
+            data={
+                "id": self.pk,
+                "from": self.from_email,
+                "to": self.to_email,
+                "subject": self.subject,
+                "status": self.status,
+            },
+        )
 
     def __str__(self):
         return f"{self.to_email} [{self.status}]"
@@ -467,6 +521,93 @@ class EmailTrackingToken(models.Model):
     def __str__(self):
         kind = "click" if self.url else "open"
         return f"{kind} token for {self.message_id}"
+
+
+class WebhookEndpoint(models.Model):
+    """A client-configured URL that receives signed event callbacks.
+
+    Requests are HMAC-signed with signing_secret (see apps.email.webhooks) so
+    the receiving server can verify a payload really came from Akilent.
+    """
+
+    EVENT_CHOICES = [
+        ("message.sent", "Message sent"),
+        ("message.failed", "Message failed"),
+        ("message.opened", "Message opened"),
+        ("message.clicked", "Link clicked"),
+    ]
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="webhook_endpoints"
+    )
+    url = models.URLField(max_length=500)
+    signing_secret = models.CharField(max_length=64, blank=True)
+    event_types = models.JSONField(default=list)
+    is_active = models.BooleanField(default=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @staticmethod
+    def generate_secret() -> str:
+        return "whsec_" + secrets.token_urlsafe(32)
+
+    def save(self, *args, **kwargs):
+        if not self.signing_secret:
+            self.signing_secret = self.generate_secret()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.url} ({self.account})"
+
+
+class WebhookDelivery(models.Model):
+    """One attempted (or retried) delivery of an event to a WebhookEndpoint."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        EXHAUSTED = "exhausted", "Exhausted"
+
+    endpoint = models.ForeignKey(
+        WebhookEndpoint, on_delete=models.CASCADE, related_name="deliveries"
+    )
+    event_type = models.CharField(max_length=50)
+    message = models.ForeignKey(
+        EmailMessage, on_delete=models.SET_NULL, blank=True, null=True
+    )
+    payload = models.JSONField(default=dict)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    response_code = models.PositiveSmallIntegerField(blank=True, null=True)
+    last_attempt_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["endpoint", "status"])]
+
+    def mark_succeeded(self, response_code: int) -> None:
+        self.status = self.Status.SUCCEEDED
+        self.response_code = response_code
+        self.attempt_count += 1
+        self.last_attempt_at = timezone.now()
+        self.save(update_fields=["status", "response_code", "attempt_count", "last_attempt_at"])
+
+    def mark_failed(self, response_code: int | None, *, exhausted: bool = False) -> None:
+        self.status = self.Status.EXHAUSTED if exhausted else self.Status.FAILED
+        self.response_code = response_code
+        self.attempt_count += 1
+        self.last_attempt_at = timezone.now()
+        self.save(update_fields=["status", "response_code", "attempt_count", "last_attempt_at"])
+
+    def __str__(self):
+        return f"{self.event_type} -> {self.endpoint_id} [{self.status}]"
 
 
 class EmailTrackingEvent(models.Model):

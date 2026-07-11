@@ -11,6 +11,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import Account
 from apps.billing.models import Plan, Subscription, UsageSummary
+from apps.core import docs as docs_kb
 from apps.core import help as help_kb
 from apps.core.models import SiteSettings
 from apps.core.utils import admin_required
@@ -137,6 +138,22 @@ def help_article(request, slug):
     return render(request, "help/article.html", {
         "article": article,
         "related": help_kb.related_to(article),
+    })
+
+
+# --- Developer docs (public) ---------------------------------------------------
+
+def docs_page(request, slug="index"):
+    from django.conf import settings
+
+    page = docs_kb.get_page(slug)
+    if page is None:
+        raise Http404("No such docs page")
+    return render(request, page.template, {
+        "page": page,
+        "pages": docs_kb.PAGES,
+        "smtp_relay_host": settings.SMTP_RELAY_HOST,
+        "smtp_relay_port": settings.SMTP_RELAY_PORT,
     })
 
 
