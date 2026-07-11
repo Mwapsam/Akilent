@@ -19,3 +19,9 @@ from automator.settings import *  # noqa: F401,F403,E402
 
 # Capture mail in django.core.mail.outbox instead of hitting SMTP.
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Run Celery tasks inline (no broker needed) so `.delay()` calls in views —
+# e.g. verification emails, transactional sends — execute synchronously and
+# stay observable via mail.outbox in tests.
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True

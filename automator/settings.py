@@ -235,6 +235,7 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "True").lower() == "true"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 
 # --- Flutterwave ---
@@ -255,6 +256,8 @@ CELERY_TIMEZONE = TIME_ZONE
 # Email + billing always run; the WhatsApp/Bitrix routes and schedules are only
 # registered when their feature flag is on (see "Feature flags" above).
 CELERY_TASK_ROUTES = {
+    # Accounts
+    "apps.accounts.tasks.send_verification_email": {"queue": "celery"},
     # Email provisioning
     "apps.email.tasks.send_email": {"queue": "outbound"},
     "apps.email.tasks.provision_mailbox": {"queue": "email"},

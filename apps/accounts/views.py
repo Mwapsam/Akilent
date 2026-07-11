@@ -6,10 +6,8 @@ from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import redirect, render
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
@@ -23,9 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 def _send_verification_email(request, user):
-    """Email the user a tokened link to activate their account."""
+    """Queue an email with a tokened link to activate their account.
+
+    Sent via Celery rather than inline so a slow/unreachable mail server
+    retries in the background instead of 500ing the request — the account
+    (User/Account/Membership) is already committed by the time this runs.
+    """
+    from apps.accounts.tasks import send_verification_email
     from apps.core.models import SiteSettings
-    from django.conf import settings
 
     site_name = SiteSettings.load().app_name or "Automator"
     uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -33,16 +36,7 @@ def _send_verification_email(request, user):
     path = reverse("verify_email", kwargs={"uidb64": uid, "token": token})
     link = request.build_absolute_uri(path)
 
-    ctx = {"user": user, "site_name": site_name, "link": link}
-    subject = render_to_string("accounts/verify_email_subject.txt", ctx).strip()
-    body = render_to_string("accounts/verify_email.txt", ctx)
-    send_mail(
-        subject,
-        body,
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
-    )
+    send_verification_email.delay(user.pk, site_name, link)
 
 
 def signup(request):
