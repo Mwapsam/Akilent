@@ -33,9 +33,17 @@
     .cta-primary:hover{ background:#F5A312; }
 
     /* Docs nav */
-    .docs-nav a{ display:block; padding:.35rem .6rem; border-radius:8px; font-size:.85rem; color:var(--paper-mid); }
+    .docs-nav a{ display:flex; align-items:center; min-height:2.75rem; padding:.5rem .6rem; border-radius:8px; font-size:.85rem; color:var(--paper-mid); }
     .docs-nav a:hover{ color:var(--paper-ink); background:#FFFFFF; }
     .docs-nav a.active{ color:var(--paper-ink); font-weight:600; background:#FFFFFF; box-shadow:inset 0 0 0 1px var(--paper-border); }
+
+    /* Mobile/tablet docs page switcher (collapsed by default so content isn't pushed down) */
+    .docs-nav-mobile summary{ cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:.5rem; min-height:2.75rem; padding:.5rem .9rem; border-radius:10px; background:#FFFFFF; border:1px solid var(--paper-border); font-size:.85rem; font-weight:600; color:var(--paper-ink); }
+    .docs-nav-mobile summary::-webkit-details-marker{ display:none; }
+    .docs-nav-mobile summary::after{ content:"▾"; color:var(--paper-lo); transition:transform .2s ease; }
+    .docs-nav-mobile[open] summary::after{ transform:rotate(180deg); }
+    .docs-nav-mobile[open] summary{ border-radius:10px 10px 0 0; border-bottom-color:transparent; }
+    .docs-nav-mobile .docs-nav{ border:1px solid var(--paper-border); border-top:none; border-radius:0 0 10px 10px; background:#FFFFFF; padding:.4rem; }
 
     /* Docs prose */
     .docs-body{ color:var(--paper-mid); font-size:.95rem; line-height:1.7; }
@@ -51,7 +59,7 @@
     .docs-body pre{ background:#0B111F; color:#E7ECF5; border-radius:.75rem; padding:1rem 1.1rem; overflow-x:auto; font-size:.82rem; line-height:1.6; }
     .docs-body pre code{ background:none; padding:0; color:inherit; }
     .docs-body strong{ color:var(--paper-ink); font-weight:600; }
-    .docs-body table{ width:100%; border-collapse:collapse; font-size:.875rem; }
+    .docs-body table{ display:block; width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-collapse:collapse; font-size:.875rem; }
     .docs-body th, .docs-body td{ text-align:left; padding:.5rem .75rem; border-bottom:1px solid var(--paper-border); vertical-align:top; }
     .docs-body th{ color:var(--paper-lo); font-weight:600; }
     .docs-body .callout{ background:#FFF8E8; border:1px solid #F3DFA6; border-radius:.75rem; padding:.85rem 1rem; }
@@ -59,13 +67,14 @@
 
     /* Code sample tabs */
     .code-tabs{ background:#0B111F; border-radius:.75rem; overflow:hidden; }
-    .code-tabs .tab-bar{ display:flex; gap:.25rem; padding:.5rem .5rem 0; border-bottom:1px solid #1C2640; }
-    .code-tabs button{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem; color:var(--text-lo); padding:.4rem .7rem; border-radius:.5rem .5rem 0 0; }
+    .code-tabs .tab-bar{ display:flex; gap:.25rem; padding:.5rem .5rem 0; border-bottom:1px solid #1C2640; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .code-tabs button{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem; color:var(--text-lo); padding:.6rem .8rem; border-radius:.5rem .5rem 0 0; white-space:nowrap; flex-shrink:0; }
     .code-tabs button.active{ color:#FAFBFC; background:#161F35; }
     .code-tabs pre{ margin:0; border-radius:0; }
 
     /* Mobile docs nav (no JS) */
     #docs-mobile-toggle:checked ~ #docs-mobile-panel{ display:block; }
+    #docs-mobile-toggle:focus-visible ~ label{ outline:2px solid var(--signal); outline-offset:3px; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -102,6 +111,7 @@
         <span class="block w-5 h-[1.5px] bg-white"></span>
       </label>
     </div>
+
     <nav id="docs-mobile-panel" class="md:hidden hidden border-t border-hairline px-6 py-4 space-y-1" aria-label="Mobile">
       <a href="/#platform" class="block text-mid hover:text-white py-1.5 text-sm">Platform</a>
       <a href="/#pricing" class="block text-mid hover:text-white py-1.5 text-sm">Pricing</a>
@@ -116,18 +126,34 @@
     </nav>
   </header>
 
-  <main id="main" class="max-w-6xl mx-auto px-6 py-10 sm:py-14 grid lg:grid-cols-[13rem,1fr,12rem] gap-10">
-    <nav class="docs-nav text-sm space-y-0.5" aria-label="Developer docs">
+  <main id="main" class="max-w-6xl mx-auto px-6 py-10 lg:mt-14 sm:py-14 grid lg:grid-cols-[13rem,1fr,12rem] gap-10">
+    <nav class="hidden lg:block docs-nav text-sm space-y-0.5" aria-label="Developer docs">
       <p class="text-xs font-semibold uppercase tracking-wider text-[#838EA3] mb-2 px-1">Developer docs</p>
       {% for p in pages %}
         <a href="{% if p.slug == 'index' %}{% url 'docs' %}{% else %}{% url 'docs-page' p.slug %}{% endif %}"
-           class="{% if p.slug == page.slug %}active{% endif %}">
+           class="{% if p.slug == page.slug %}active{% endif %}"
+           {% if p.slug == page.slug %}aria-current="page"{% endif %}>
           {{ p.title }}
         </a>
       {% endfor %}
     </nav>
 
     <div class="min-w-0">
+      <details class="docs-nav-mobile lg:hidden mb-6" open>
+        <summary>
+          <span>Developer docs — {{ page.title }}</span>
+        </summary>
+        <nav class="docs-nav text-sm space-y-0.5" aria-label="Developer docs">
+          {% for p in pages %}
+            <a href="{% if p.slug == 'index' %}{% url 'docs' %}{% else %}{% url 'docs-page' p.slug %}{% endif %}"
+               class="{% if p.slug == page.slug %}active{% endif %}"
+               {% if p.slug == page.slug %}aria-current="page"{% endif %}>
+              {{ p.title }}
+            </a>
+          {% endfor %}
+        </nav>
+      </details>
+
       <p class="text-xs font-semibold uppercase tracking-wider text-[#1FAF9C]/80 mb-2 font-mono">Developer docs</p>
       <h1 class="font-display text-2xl sm:text-3xl font-semibold tracking-tight mb-2">{{ page.title }}</h1>
       <p class="text-[#657089] mb-8">{{ page.summary }}</p>
