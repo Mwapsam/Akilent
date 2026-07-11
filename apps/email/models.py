@@ -432,6 +432,150 @@ class EmailAlias(models.Model):
         return f"{self.address} -> {self.goto}"
 
 
+class EmailTemplate(models.Model):
+    """A reusable, tenant-owned email template with variable interpolation.
+
+    Subject/body fields use Django template syntax rendered through a
+    sandboxed engine (apps.email.services.render.render_template) — only the
+    variables dict passed at render time is visible, never settings/request
+    data, so tenant-authored templates can't reach app internals.
+    """
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="email_templates"
+    )
+    name = models.CharField(max_length=150)
+    slug = models.SlugField(max_length=150)
+
+    subject = models.CharField(max_length=998, blank=True, default="")
+    text_body = models.TextField(blank=True, default="")
+    html_body = models.TextField(blank=True, default="")
+
+    # Example variables used by the dashboard preview/test-render.
+    sample_variables = models.JSONField(default=dict, blank=True)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        unique_together = ("account", "slug")
+
+    def __str__(self):
+        return f"{self.name} ({self.account})"
+
+
+class BulkEmailCampaign(models.Model):
+    """One client-submitted bulk send, fanned out to N EmailMessage rows.
+
+    BulkEmailRecipient is to this model what WebhookDelivery is to
+    WebhookEndpoint: one row per fan-out target, created up front, updated
+    as each recipient's send is dispatched/completes.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        QUEUED = "queued", "Queued"
+        SENDING = "sending", "Sending"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="bulk_campaigns"
+    )
+    domain = models.ForeignKey(
+        EmailDomain, on_delete=models.SET_NULL, blank=True, null=True
+    )
+    template = models.ForeignKey(
+        EmailTemplate, on_delete=models.SET_NULL, blank=True, null=True
+    )
+
+    from_email = models.EmailField()
+    # Used only when no template is set (ad hoc bulk send).
+    subject_override = models.CharField(max_length=998, blank=True, default="")
+    text_override = models.TextField(blank=True, default="")
+    html_override = models.TextField(blank=True, default="")
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.DRAFT
+    )
+    recipient_count = models.PositiveIntegerField(default=0)
+    queued_count = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["account", "status"])]
+
+    def mark_sending(self) -> None:
+        if self.status == self.Status.DRAFT or self.status == self.Status.QUEUED:
+            self.status = self.Status.SENDING
+            if self.started_at is None:
+                self.started_at = timezone.now()
+            self.save(update_fields=["status", "started_at"])
+
+    def mark_completed(self) -> None:
+        self.status = self.Status.COMPLETED
+        self.completed_at = timezone.now()
+        self.save(update_fields=["status", "completed_at"])
+
+    def increment_counts(self, *, queued=0, sent=0, failed=0) -> None:
+        updates = []
+        if queued:
+            self.queued_count = models.F("queued_count") + queued
+            updates.append("queued_count")
+        if sent:
+            self.sent_count = models.F("sent_count") + sent
+            updates.append("sent_count")
+        if failed:
+            self.failed_count = models.F("failed_count") + failed
+            updates.append("failed_count")
+        if updates:
+            self.save(update_fields=updates)
+            self.refresh_from_db(fields=updates)
+
+    def __str__(self):
+        return f"Campaign {self.pk} ({self.account}) [{self.status}]"
+
+
+class BulkEmailRecipient(models.Model):
+    """One recipient of a BulkEmailCampaign, with per-recipient template variables."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        QUEUED = "queued", "Queued"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    campaign = models.ForeignKey(
+        BulkEmailCampaign, on_delete=models.CASCADE, related_name="recipients"
+    )
+    to_email = models.EmailField()
+    variables = models.JSONField(default=dict, blank=True)
+    message = models.ForeignKey(
+        "EmailMessage", on_delete=models.SET_NULL, blank=True, null=True
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["pk"]
+        indexes = [models.Index(fields=["campaign", "status"])]
+
+    def __str__(self):
+        return f"{self.to_email} [{self.status}] (campaign {self.campaign_id})"
+
+
 class EmailMessage(models.Model):
     """Log of a transactional email send."""
 
@@ -446,10 +590,26 @@ class EmailMessage(models.Model):
     domain = models.ForeignKey(
         EmailDomain, on_delete=models.SET_NULL, blank=True, null=True
     )
+    template = models.ForeignKey(
+        EmailTemplate, on_delete=models.SET_NULL, blank=True, null=True
+    )
+    campaign = models.ForeignKey(
+        BulkEmailCampaign,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="messages",
+    )
 
     from_email = models.EmailField()
     to_email = models.EmailField()
     subject = models.CharField(max_length=998, blank=True, default="")
+
+    # Snapshot of the exact content sent, independent of later template
+    # edits — the audit trail for "what did we actually send."
+    rendered_subject = models.CharField(max_length=998, blank=True, default="")
+    rendered_text = models.TextField(blank=True, default="")
+    rendered_html = models.TextField(blank=True, default="")
 
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.QUEUED

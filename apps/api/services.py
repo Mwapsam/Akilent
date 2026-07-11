@@ -6,19 +6,35 @@ apps.email.views.api_send shim, so the two entry points can never drift.
 from __future__ import annotations
 
 from django.db import transaction
+from django.utils.text import slugify
 
 from apps.billing.limits import LimitChecker
-from apps.email.models import EmailDomain, EmailMessage
+from apps.email.exceptions import UnverifiedDomainError
+from apps.email.models import BulkEmailCampaign, EmailDomain, EmailMessage, EmailTemplate
+from apps.email.services import render_template
+from apps.email.services.bulk import create_campaign
 from apps.email.tasks import send_email
 
+# Re-exported for backward compat — this used to be defined here.
+__all__ = [
+    "UnverifiedDomainError",
+    "create_and_queue_message",
+    "create_template",
+    "update_template",
+    "create_and_queue_campaign",
+]
 
-class UnverifiedDomainError(Exception):
-    """The `from` address's domain isn't a verified sending domain for the account."""
 
-    def __init__(self, domain: str):
-        self.domain = domain
+class TemplateMissingContentError(Exception):
+    """Neither template_id nor inline subject/text/html were provided."""
+
+
+class RecipientCapExceededError(Exception):
+    def __init__(self, cap: int, count: int):
+        self.cap = cap
+        self.count = count
         super().__init__(
-            f"'{domain}' is not a verified sending domain for this account"
+            f"Campaign has {count} recipients, exceeding your plan's cap of {cap}."
         )
 
 
@@ -30,11 +46,16 @@ def create_and_queue_message(
     subject: str = "",
     text_body: str = "",
     html_body: str = "",
+    template_id: int | None = None,
+    template_variables: dict | None = None,
 ) -> EmailMessage:
     """Validate, reserve quota, and queue a transactional send.
 
-    Raises UnverifiedDomainError or apps.billing.limits.PlanLimitExceeded on
-    rejection — callers translate those into their own response shape.
+    If template_id is given, the template's subject/text/html are rendered
+    with template_variables and take precedence over subject/text_body/
+    html_body. Raises UnverifiedDomainError or
+    apps.billing.limits.PlanLimitExceeded on rejection — callers translate
+    those into their own response shape.
     """
     from_domain = from_email.rsplit("@", 1)[-1].lower()
     domain = EmailDomain.objects.filter(
@@ -47,14 +68,110 @@ def create_and_queue_message(
     lc.require_feature("email_apis", "the email API & SMTP relay")
     lc.check_email()
 
+    template = None
+    if template_id is not None:
+        template = EmailTemplate.objects.get(pk=template_id, account=account)
+        subject, text_body, html_body = render_template(
+            template, template_variables or {}
+        )
+
     msg = EmailMessage.objects.create(
         account=account,
         domain=domain,
+        template=template,
         from_email=from_email,
         to_email=to_email,
         subject=subject,
+        rendered_subject=subject,
+        rendered_text=text_body,
+        rendered_html=html_body,
     )
     transaction.on_commit(
         lambda: send_email.delay(msg.id, text_body=text_body, html_body=html_body)
     )
     return msg
+
+
+def create_template(
+    *,
+    account,
+    name: str,
+    slug: str = "",
+    subject: str = "",
+    text_body: str = "",
+    html_body: str = "",
+    sample_variables: dict | None = None,
+) -> EmailTemplate:
+    lc = LimitChecker(account)
+    lc.require_feature("email_templates", "email templates")
+    return EmailTemplate.objects.create(
+        account=account,
+        name=name,
+        slug=slug or slugify(name),
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        sample_variables=sample_variables or {},
+    )
+
+
+def update_template(*, template: EmailTemplate, **fields) -> EmailTemplate:
+    field_map = {
+        "name": "name",
+        "subject": "subject",
+        "text": "text_body",
+        "html": "html_body",
+        "sample_variables": "sample_variables",
+    }
+    updated = []
+    for key, model_field in field_map.items():
+        if key in fields and fields[key] is not None:
+            setattr(template, model_field, fields[key])
+            updated.append(model_field)
+    if updated:
+        template.save(update_fields=updated)
+    return template
+
+
+def create_and_queue_campaign(
+    *,
+    account,
+    from_email: str,
+    template_id: int | None = None,
+    subject: str = "",
+    text_body: str = "",
+    html_body: str = "",
+    recipients: list[dict],
+) -> BulkEmailCampaign:
+    """Validate, gate on plan features/recipient cap, and queue a bulk campaign.
+
+    Either template_id or inline subject/text/html must be given. Raises
+    UnverifiedDomainError, TemplateMissingContentError,
+    RecipientCapExceededError, or apps.billing.limits.PlanLimitExceeded —
+    callers translate those into their own response shape.
+    """
+    lc = LimitChecker(account)
+    lc.require_feature("bulk_email", "bulk email sending")
+
+    # require_feature already confirmed an active subscription exists.
+    cap = lc.subscription.plan.max_bulk_recipients_per_campaign
+    if cap != -1 and len(recipients) > cap:
+        raise RecipientCapExceededError(cap, len(recipients))
+
+    template = None
+    if template_id is not None:
+        template = EmailTemplate.objects.get(pk=template_id, account=account)
+    elif not (subject or text_body or html_body):
+        raise TemplateMissingContentError(
+            "Provide either template_id or subject/text/html."
+        )
+
+    return create_campaign(
+        account=account,
+        from_email=from_email,
+        template=template,
+        subject_override=subject,
+        text_override=text_body,
+        html_override=html_body,
+        recipients=recipients,
+    )

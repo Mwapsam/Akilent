@@ -4,10 +4,11 @@ All heavy provider calls are handled here rather than in Django views, so HTTP
 requests return immediately and retries happen transparently.
 
 Queues:
-  email     — mailbox/domain/alias provisioning tasks
-  outbound  — send_email
-  webhooks  — deliver_webhook
-  celery    — prune_* maintenance tasks
+  email      — mailbox/domain/alias provisioning tasks
+  outbound   — send_email, send_bulk_recipient_email
+  campaigns  — dispatch_campaign
+  webhooks   — deliver_webhook
+  celery     — prune_* maintenance tasks
 
 ProvisioningJob is created by the caller before dispatching the task, then
 updated here as the task runs (PENDING → RUNNING → SUCCESS | FAILED | RETRYING).
@@ -19,12 +20,20 @@ import logging
 
 import requests
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 from apps.email.exceptions import EmailProviderError
-from apps.email.models import EmailMessage, Mailbox, ProvisioningJob, WebhookDelivery
+from apps.email.models import (
+    BulkEmailCampaign,
+    BulkEmailRecipient,
+    EmailMessage,
+    Mailbox,
+    ProvisioningJob,
+    WebhookDelivery,
+)
 from apps.email.providers import get_mail_provider
-from apps.email.services import MailboxService, smtp_send
+from apps.email.services import MailboxService, render_template, smtp_send
 from apps.email.webhooks import EVENT_HEADER, SIGNATURE_HEADER, build_signature_header
 
 logger = logging.getLogger(__name__)
@@ -34,6 +43,8 @@ _RETRY_DELAY = 60  # seconds
 
 _WEBHOOK_MAX_RETRIES = 6
 _WEBHOOK_TIMEOUT_SECONDS = 10
+
+_CAMPAIGN_CHUNK_SIZE = 500
 
 
 # ── Mailbox provisioning ──────────────────────────────────────────────────────
@@ -257,25 +268,11 @@ def provision_domain_async(
 # ── Email sending ─────────────────────────────────────────────────────────────
 
 
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="outbound",
-)
-def send_email(
-    self, email_message_id: int, text_body: str = "", html_body: str = ""
-) -> None:
-    """Send a queued EmailMessage and record the outcome."""
-    try:
-        msg = EmailMessage.objects.select_related("account").get(pk=email_message_id)
-    except EmailMessage.DoesNotExist:
-        logger.error("send_email: EmailMessage %s not found", email_message_id)
-        return
+def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str) -> None:
+    """Shared send logic for both send_email and send_bulk_recipient_email.
 
-    if msg.status == EmailMessage.Status.SENT:
-        return
-
+    ``task`` is the bound Celery task instance (for retry/request.retries).
+    """
     if html_body:
         try:
             from apps.billing.limits import LimitChecker
@@ -290,7 +287,7 @@ def send_email(
                 )
                 html_body = apply_tracking(html_body, msg, msg.to_email, domain)
         except Exception as exc:
-            logger.debug("send_email: tracking injection skipped: %s", exc)
+            logger.debug("_send_email_message: tracking injection skipped: %s", exc)
 
     try:
         message_id = smtp_send(
@@ -301,10 +298,16 @@ def send_email(
             html_body=html_body,
         )
         msg.mark_sent(message_id)
+        if msg.campaign_id:
+            msg.campaign.increment_counts(sent=1)
+            BulkEmailRecipient.objects.filter(message=msg).update(
+                status=BulkEmailRecipient.Status.SENT
+            )
+            _maybe_complete_campaign(msg.campaign)
     except Exception as exc:
         msg.mark_failed(str(exc))
-        logger.exception("send_email: failed for EmailMessage %s", email_message_id)
-        is_last = self.request.retries >= _MAX_RETRIES
+        logger.exception("_send_email_message: failed for EmailMessage %s", msg.pk)
+        is_last = task.request.retries >= _MAX_RETRIES
         if is_last:
             # Quota was reserved at accept time (LimitChecker.check_email); a
             # message that never gets delivered shouldn't permanently burn it.
@@ -314,10 +317,211 @@ def send_email(
                 LimitChecker(msg.account).release_email()
             except Exception:
                 logger.exception(
-                    "send_email: failed to release quota for EmailMessage %s",
-                    email_message_id,
+                    "_send_email_message: failed to release quota for EmailMessage %s",
+                    msg.pk,
                 )
-        raise self.retry(exc=exc)
+            if msg.campaign_id:
+                msg.campaign.increment_counts(failed=1)
+                BulkEmailRecipient.objects.filter(message=msg).update(
+                    status=BulkEmailRecipient.Status.FAILED, error=str(exc)[:5000]
+                )
+                _maybe_complete_campaign(msg.campaign)
+        raise task.retry(exc=exc)
+
+
+def _maybe_complete_campaign(campaign: BulkEmailCampaign) -> None:
+    """Mark a campaign COMPLETED once no recipients are PENDING/QUEUED.
+
+    Called after each recipient's terminal send outcome — dispatch_campaign
+    only re-enqueues itself while PENDING rows remain, so the final
+    QUEUED -> SENT/FAILED transitions (which happen asynchronously, after the
+    last chunk was dispatched) are what actually close out the campaign.
+    """
+    still_open = BulkEmailRecipient.objects.filter(
+        campaign=campaign,
+        status__in=[BulkEmailRecipient.Status.PENDING, BulkEmailRecipient.Status.QUEUED],
+    ).exists()
+    if not still_open:
+        campaign.mark_completed()
+
+
+@shared_task(
+    bind=True,
+    max_retries=_MAX_RETRIES,
+    default_retry_delay=_RETRY_DELAY,
+    queue="outbound",
+)
+def send_email(
+    self, email_message_id: int, text_body: str = "", html_body: str = ""
+) -> None:
+    """Send a queued EmailMessage and record the outcome."""
+    try:
+        msg = EmailMessage.objects.select_related("account", "campaign").get(
+            pk=email_message_id
+        )
+    except EmailMessage.DoesNotExist:
+        logger.error("send_email: EmailMessage %s not found", email_message_id)
+        return
+
+    if msg.status == EmailMessage.Status.SENT:
+        return
+
+    _send_email_message(self, msg, text_body, html_body)
+
+
+@shared_task(
+    bind=True,
+    max_retries=_MAX_RETRIES,
+    default_retry_delay=_RETRY_DELAY,
+    queue="outbound",
+)
+def send_bulk_recipient_email(self, email_message_id: int) -> None:
+    """Render the EmailMessage's template/recipient variables, then send.
+
+    Same retry/tracking/quota-release behavior as send_email — the only
+    difference is content is resolved from EmailMessage.template +
+    BulkEmailRecipient.variables rather than passed in directly.
+    """
+    try:
+        msg = EmailMessage.objects.select_related(
+            "account", "campaign", "template"
+        ).get(pk=email_message_id)
+    except EmailMessage.DoesNotExist:
+        logger.error(
+            "send_bulk_recipient_email: EmailMessage %s not found", email_message_id
+        )
+        return
+
+    if msg.status == EmailMessage.Status.SENT:
+        return
+
+    recipient = BulkEmailRecipient.objects.filter(message=msg).first()
+    variables = recipient.variables if recipient else {}
+
+    campaign = msg.campaign
+    if msg.template_id:
+        subject, text_body, html_body = render_template(msg.template, variables)
+    else:
+        from apps.email.services import render_string
+
+        campaign_html = campaign.html_override if campaign else ""
+        campaign_text = campaign.text_override if campaign else ""
+        campaign_subject = campaign.subject_override if campaign else ""
+
+        subject = render_string(campaign_subject, variables)
+        text_body = render_string(campaign_text, variables)
+        html_body = render_string(campaign_html, variables)
+
+    msg.subject = subject
+    msg.rendered_subject = subject
+    msg.rendered_text = text_body
+    msg.rendered_html = html_body
+    msg.save(update_fields=["subject", "rendered_subject", "rendered_text", "rendered_html"])
+
+    _send_email_message(self, msg, text_body, html_body)
+
+
+# ── Bulk campaign fan-out ─────────────────────────────────────────────────────
+
+
+@shared_task(
+    bind=True,
+    max_retries=_MAX_RETRIES,
+    default_retry_delay=_RETRY_DELAY,
+    queue="campaigns",
+)
+def dispatch_campaign(self, campaign_id: int) -> None:
+    """Fan a BulkEmailCampaign out to EmailMessage rows, one bounded chunk at a time.
+
+    Self-chaining: processes up to _CAMPAIGN_CHUNK_SIZE PENDING recipients,
+    then re-enqueues itself if more remain. Keeps each task run bounded and
+    restart-safe if a worker dies mid-campaign.
+
+    Quota is reserved per chunk (LimitChecker.reserve_bulk) with partial-send
+    semantics: recipients beyond the account's remaining monthly quota are
+    marked FAILED with a quota-exceeded error, but the rest of the chunk (and
+    campaign) still proceeds.
+    """
+    from apps.billing.limits import LimitChecker
+
+    try:
+        campaign = BulkEmailCampaign.objects.select_related("account", "domain", "template").get(
+            pk=campaign_id
+        )
+    except BulkEmailCampaign.DoesNotExist:
+        logger.error("dispatch_campaign: BulkEmailCampaign %s not found", campaign_id)
+        return
+
+    if campaign.status in (
+        BulkEmailCampaign.Status.CANCELLED,
+        BulkEmailCampaign.Status.COMPLETED,
+    ):
+        return
+
+    campaign.mark_sending()
+
+    chunk = list(
+        BulkEmailRecipient.objects.filter(
+            campaign=campaign, status=BulkEmailRecipient.Status.PENDING
+        ).order_by("pk")[:_CAMPAIGN_CHUNK_SIZE]
+    )
+
+    if not chunk:
+        remaining = BulkEmailRecipient.objects.filter(
+            campaign=campaign,
+            status__in=[BulkEmailRecipient.Status.PENDING, BulkEmailRecipient.Status.QUEUED],
+        ).exists()
+        if not remaining:
+            campaign.mark_completed()
+        return
+
+    granted = LimitChecker(campaign.account).reserve_bulk(len(chunk))
+    to_send, to_fail = chunk[:granted], chunk[granted:]
+
+    if to_fail:
+        BulkEmailRecipient.objects.filter(
+            pk__in=[r.pk for r in to_fail]
+        ).update(
+            status=BulkEmailRecipient.Status.FAILED,
+            error="Monthly email limit reached.",
+        )
+        campaign.increment_counts(failed=len(to_fail))
+
+    if to_send:
+        messages = [
+            EmailMessage(
+                account=campaign.account,
+                domain=campaign.domain,
+                template=campaign.template,
+                campaign=campaign,
+                from_email=campaign.from_email,
+                to_email=r.to_email,
+                subject=campaign.template.subject if campaign.template else campaign.subject_override,
+            )
+            for r in to_send
+        ]
+        created = EmailMessage.objects.bulk_create(messages)
+
+        for recipient, msg in zip(to_send, created):
+            recipient.message = msg
+            recipient.status = BulkEmailRecipient.Status.QUEUED
+        BulkEmailRecipient.objects.bulk_update(to_send, ["message", "status"])
+        campaign.increment_counts(queued=len(to_send))
+
+        message_ids = [m.pk for m in created]
+        transaction.on_commit(
+            lambda ids=message_ids: [send_bulk_recipient_email.delay(mid) for mid in ids]
+        )
+
+    still_pending = BulkEmailRecipient.objects.filter(
+        campaign=campaign, status=BulkEmailRecipient.Status.PENDING
+    ).exists()
+    if still_pending:
+        dispatch_campaign.delay(campaign_id)
+    else:
+        # Remaining QUEUED rows complete asynchronously via
+        # _maybe_complete_campaign, called from each recipient's send task.
+        _maybe_complete_campaign(campaign)
 
 
 # ── Webhook delivery ──────────────────────────────────────────────────────────

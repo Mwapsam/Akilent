@@ -12,6 +12,16 @@ Pass collapsible=True in the desktop sidebar so labels hide when collapsed.{% en
     {% include "components/icon.html" with name="globe" class="w-5 h-5 shrink-0" %}
     <span {% if collapsible %}x-show="!$store.ui.sidebarCollapsed" x-cloak{% endif %}>Domains</span>
   </a>
+  <a href="/email/templates/" class="nav-link {% if '/email/templates' in p %}nav-link-active{% endif %}"
+     {% if '/email/templates' in p %}aria-current="page"{% endif %}>
+    {% include "components/icon.html" with name="book-open" class="w-5 h-5 shrink-0" %}
+    <span {% if collapsible %}x-show="!$store.ui.sidebarCollapsed" x-cloak{% endif %}>Templates</span>
+  </a>
+  <a href="/email/campaigns/" class="nav-link {% if '/email/campaigns' in p %}nav-link-active{% endif %}"
+     {% if '/email/campaigns' in p %}aria-current="page"{% endif %}>
+    {% include "components/icon.html" with name="chat" class="w-5 h-5 shrink-0" %}
+    <span {% if collapsible %}x-show="!$store.ui.sidebarCollapsed" x-cloak{% endif %}>Campaigns</span>
+  </a>
   <a href="/email/mailboxes/" class="nav-link {% if '/email/mailboxes' in p or '/email/aliases' in p %}nav-link-active{% endif %}"
      {% if '/email/mailboxes' in p %}aria-current="page"{% endif %}>
     {% include "components/icon.html" with name="inbox" class="w-5 h-5 shrink-0" %}

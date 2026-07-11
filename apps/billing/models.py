@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -42,6 +42,10 @@ class Plan(models.Model):
     tracking_webhooks = models.BooleanField(default=False)  # tracking, analytics & webhooks
     detailed_analytics = models.BooleanField(default=False) # detailed analytics & insights
     outbound_webhooks = models.BooleanField(default=False)  # delivery/open/click callbacks
+    bulk_email = models.BooleanField(default=False)          # mass/campaign sending
+    email_templates = models.BooleanField(default=True)      # DB-backed reusable templates
+    # -1 = unlimited, same convention as the other max_* fields.
+    max_bulk_recipients_per_campaign = models.IntegerField(default=500)
     log_retention_days = models.PositiveIntegerField(default=7)  # log retention window
     # Requests/minute against apps.api (distinct from max_emails_per_month,
     # which is a monthly volume cap, not a request-rate limit).
@@ -175,6 +179,32 @@ class UsageSummary(models.Model):
             emails_used=F("emails_used") + 1
         )
         return updated > 0
+
+    @classmethod
+    def reserve_email_bulk(cls, account, cap: int, count: int) -> int:
+        """Atomically claim up to `count` emails against the monthly cap.
+
+        cap=-1 means unlimited. Returns the number actually reserved, which
+        may be less than `count` (including 0) if the cap is close to being
+        reached — callers use this to implement partial-send semantics for
+        bulk campaigns rather than an all-or-nothing accept/reject.
+        """
+        if count <= 0:
+            return 0
+        period_start = timezone.now().date().replace(day=1)
+        with transaction.atomic():
+            obj, _ = cls.objects.select_for_update().get_or_create(
+                account=account, period_start=period_start
+            )
+            if cap == -1:
+                granted = count
+            else:
+                granted = max(0, min(count, cap - obj.emails_used))
+            if granted:
+                cls.objects.filter(pk=obj.pk).update(
+                    emails_used=F("emails_used") + granted
+                )
+            return granted
 
     @classmethod
     def release_email(cls, account) -> None:

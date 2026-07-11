@@ -133,3 +133,15 @@ class LimitChecker:
     def release_email(self):
         from apps.billing.models import UsageSummary
         UsageSummary.release_email(self.account)
+
+    def reserve_bulk(self, count: int) -> int:
+        """Reserve up to `count` emails against the monthly cap for a bulk
+
+        campaign chunk. Returns how many were actually reserved (partial-send
+        semantics — see UsageSummary.reserve_email_bulk).
+        """
+        plan = self._require_active_plan()
+        from apps.billing.models import UsageSummary
+        return UsageSummary.reserve_email_bulk(
+            self.account, plan.max_emails_per_month, count
+        )

@@ -14,6 +14,7 @@ compatibility with existing tasks.py imports.
 from .alias import AliasService
 from .domain import DomainService
 from .mailbox import MailboxService
+from .render import render_string, render_template
 from .send import apply_tracking, smtp_send
 from .smtp_credential import SmtpCredentialService
 
@@ -24,4 +25,6 @@ __all__ = [
     "SmtpCredentialService",
     "smtp_send",
     "apply_tracking",
+    "render_template",
+    "render_string",
 ]

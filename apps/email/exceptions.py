@@ -116,3 +116,13 @@ class ValidationError(EmailProviderError):
 # Backwards-compatible alias — existing code that catches MailProviderError
 # (from apps.email.providers.base) works without a mass import change.
 MailProviderError = EmailProviderError
+
+
+class UnverifiedDomainError(Exception):
+    """The `from` address's domain isn't a verified sending domain for the account."""
+
+    def __init__(self, domain: str):
+        self.domain = domain
+        super().__init__(
+            f"'{domain}' is not a verified sending domain for this account"
+        )

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Campaign #{{ campaign.pk }} — Automator{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Campaign #{{ campaign.pk }}</h1>
+    <p class="text-sm text-gray-500 mt-1">{{ campaign.from_email }}</p>
+  </div>
+  <a href="/email/campaigns/" class="btn btn-secondary btn-sm">Back to campaigns</a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="card card-pad mb-6" id="campaign-progress" data-poll-url="/email/campaigns/{{ campaign.pk }}/">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+    <div>
+      <p class="text-2xl font-semibold" data-field="recipient_count">{{ campaign.recipient_count }}</p>
+      <p class="text-xs text-gray-500 mt-1">Recipients</p>
+    </div>
+    <div>
+      <p class="text-2xl font-semibold" data-field="queued_count">{{ campaign.queued_count }}</p>
+      <p class="text-xs text-gray-500 mt-1">Queued</p>
+    </div>
+    <div>
+      <p class="text-2xl font-semibold text-green-600" data-field="sent_count">{{ campaign.sent_count }}</p>
+      <p class="text-xs text-gray-500 mt-1">Sent</p>
+    </div>
+    <div>
+      <p class="text-2xl font-semibold text-red-600" data-field="failed_count">{{ campaign.failed_count }}</p>
+      <p class="text-xs text-gray-500 mt-1">Failed</p>
+    </div>
+  </div>
+  <p class="text-sm text-gray-600 mt-4 text-center">
+    Status: <span class="badge badge-neutral" data-field="status">{{ campaign.get_status_display }}</span>
+  </p>
+</div>
+
+<div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Recipient</th><th>Status</th><th>Error</th></tr></thead>
+    <tbody>
+      {% for r in recipients %}
+      <tr>
+        <td>{{ r.to_email }}</td>
+        <td>
+          {% if r.status == 'sent' %}<span class="badge badge-success">Sent</span>
+          {% elif r.status == 'failed' %}<span class="badge badge-danger">Failed</span>
+          {% elif r.status == 'queued' %}<span class="badge badge-warning">Queued</span>
+          {% else %}<span class="badge badge-neutral">Pending</span>{% endif %}
+        </td>
+        <td class="text-xs text-red-600">{{ r.error|truncatechars:120 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  var el = document.getElementById("campaign-progress");
+  if (!el) return;
+  var url = el.dataset.pollUrl;
+  var terminal = ["completed", "failed", "cancelled"];
+  function poll() {
+    fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        Object.keys(data).forEach(function (key) {
+          var field = el.querySelector('[data-field="' + key + '"]');
+          if (field) field.textContent = data[key];
+        });
+        if (terminal.indexOf(data.status) === -1) {
+          setTimeout(poll, 3000);
+        }
+      })
+      .catch(function () {});
+  }
+  if (terminal.indexOf("{{ campaign.status }}") === -1) {
+    setTimeout(poll, 3000);
+  }
+})();
+</script>
+
+{% endblock %}

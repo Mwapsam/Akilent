@@ -884,3 +884,257 @@ def api_send(request):
     response["Deprecation"] = "true"
     response["Link"] = '</api/v1/messages>; rel="successor-version"'
     return response
+
+
+# --- Templates ------------------------------------------------------------
+
+
+@login_required
+def templates_list(request):
+    from apps.billing.limits import LimitChecker
+    from apps.email.models import EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    templates_enabled = admin or (account and LimitChecker(account).has_feature("email_templates"))
+    templates = _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
+
+    return render(request, "email/templates.html", {
+        "account": account,
+        "is_admin": admin,
+        "templates": templates,
+        "templates_enabled": templates_enabled,
+    })
+
+
+@login_required
+@require_POST
+def template_create(request):
+    from django.utils.text import slugify
+
+    from apps.billing.limits import LimitChecker
+    from apps.email.models import EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    if not admin and not LimitChecker(account).has_feature("email_templates"):
+        messages.error(request, "Your plan does not include email templates. Upgrade to enable them.")
+        return redirect("email-templates")
+
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        messages.error(request, "A name is required.")
+        return redirect("email-templates")
+
+    EmailTemplate.objects.create(
+        account=account,
+        name=name,
+        slug=(request.POST.get("slug") or "").strip() or slugify(name),
+        subject=request.POST.get("subject") or "",
+        text_body=request.POST.get("text_body") or "",
+        html_body=request.POST.get("html_body") or "",
+    )
+    messages.success(request, "Template created.")
+    return redirect("email-templates")
+
+
+@login_required
+@require_POST
+def template_edit(request, pk):
+    from apps.email.models import EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+    template.name = (request.POST.get("name") or template.name).strip()
+    template.subject = request.POST.get("subject") or ""
+    template.text_body = request.POST.get("text_body") or ""
+    template.html_body = request.POST.get("html_body") or ""
+    template.save(update_fields=["name", "subject", "text_body", "html_body", "updated_at"])
+    messages.success(request, "Template updated.")
+    return redirect("email-templates")
+
+
+@login_required
+@require_POST
+def template_delete(request, pk):
+    from apps.email.models import EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+    template.is_active = False
+    template.save(update_fields=["is_active"])
+    messages.success(request, "Template deleted.")
+    return redirect("email-templates")
+
+
+@login_required
+def template_preview(request, pk):
+    from apps.email.models import EmailTemplate
+    from apps.email.services import render_template
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+    try:
+        variables = json.loads(request.GET.get("variables") or "{}")
+    except json.JSONDecodeError:
+        variables = template.sample_variables
+    subject, text_body, html_body = render_template(template, variables or template.sample_variables)
+    return JsonResponse({"subject": subject, "text": text_body, "html": html_body})
+
+
+# --- Bulk campaigns ---------------------------------------------------------
+
+
+def _parse_recipients_csv(uploaded_file) -> list[dict]:
+    """Parse a small CSV of recipients: first column `to`, remaining columns become variables."""
+    import csv
+    import io
+
+    text = uploaded_file.read().decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    recipients = []
+    for row in reader:
+        to_email = (row.pop("to", None) or row.pop("email", None) or "").strip()
+        if not to_email:
+            continue
+        recipients.append({"to": to_email, "variables": {k: v for k, v in row.items() if k}})
+    return recipients
+
+
+@login_required
+def campaigns_list(request):
+    from apps.billing.limits import LimitChecker
+    from apps.email.models import BulkEmailCampaign, EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    bulk_enabled = admin or (account and LimitChecker(account).has_feature("bulk_email"))
+    campaigns = _scoped(BulkEmailCampaign.objects, request, account)[:50]
+    templates = _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
+
+    return render(request, "email/campaigns.html", {
+        "account": account,
+        "is_admin": admin,
+        "campaigns": campaigns,
+        "templates": templates,
+        "bulk_enabled": bulk_enabled,
+    })
+
+
+@login_required
+@require_POST
+def campaign_create(request):
+    from apps.api.services import (
+        RecipientCapExceededError,
+        TemplateMissingContentError,
+        create_and_queue_campaign,
+    )
+    from apps.billing.limits import PlanLimitExceeded
+    from apps.email.exceptions import UnverifiedDomainError
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    from_email = (request.POST.get("from_email") or "").strip()
+    template_id = request.POST.get("template_id") or None
+    subject = request.POST.get("subject") or ""
+    text_body = request.POST.get("text_body") or ""
+    html_body = request.POST.get("html_body") or ""
+
+    recipients: list[dict] = []
+    uploaded = request.FILES.get("recipients_csv")
+    if uploaded:
+        try:
+            recipients = _parse_recipients_csv(uploaded)
+        except Exception:
+            messages.error(request, "Could not parse the uploaded CSV file.")
+            return redirect("email-campaigns")
+    else:
+        raw_json = request.POST.get("recipients_json") or "[]"
+        try:
+            parsed = json.loads(raw_json)
+            recipients = [
+                {"to": r.get("to"), "variables": r.get("variables") or {}}
+                for r in parsed
+                if r.get("to")
+            ]
+        except json.JSONDecodeError:
+            messages.error(request, "Recipients JSON is invalid.")
+            return redirect("email-campaigns")
+
+    if not from_email:
+        messages.error(request, "A from address is required.")
+        return redirect("email-campaigns")
+    if not recipients:
+        messages.error(request, "At least one recipient is required.")
+        return redirect("email-campaigns")
+
+    try:
+        create_and_queue_campaign(
+            account=account,
+            from_email=from_email,
+            template_id=int(template_id) if template_id else None,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            recipients=recipients,
+        )
+    except UnverifiedDomainError as exc:
+        messages.error(request, str(exc))
+    except (PlanLimitExceeded, RecipientCapExceededError, TemplateMissingContentError) as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, "Campaign queued.")
+    return redirect("email-campaigns")
+
+
+@login_required
+def campaign_detail(request, pk):
+    from apps.email.models import BulkEmailCampaign, BulkEmailRecipient
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    campaign = get_object_or_404(_scoped(BulkEmailCampaign.objects, request, account), pk=pk)
+    recipients = campaign.recipients.select_related("message")[:200]
+
+    if is_ajax(request):
+        return JsonResponse({
+            "status": campaign.status,
+            "recipient_count": campaign.recipient_count,
+            "queued_count": campaign.queued_count,
+            "sent_count": campaign.sent_count,
+            "failed_count": campaign.failed_count,
+        })
+
+    return render(request, "email/campaign_detail.html", {
+        "account": account,
+        "is_admin": admin,
+        "campaign": campaign,
+        "recipients": recipients,
+    })

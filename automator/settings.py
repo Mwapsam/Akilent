@@ -308,6 +308,8 @@ CELERY_TASK_ROUTES = {
     "apps.accounts.tasks.send_verification_email": {"queue": "celery"},
     # Email provisioning
     "apps.email.tasks.send_email": {"queue": "outbound"},
+    "apps.email.tasks.send_bulk_recipient_email": {"queue": "outbound"},
+    "apps.email.tasks.dispatch_campaign": {"queue": "campaigns"},
     "apps.email.tasks.provision_mailbox": {"queue": "email"},
     "apps.email.tasks.provision_mailbox_async": {"queue": "email"},
     "apps.email.tasks.deprovision_mailbox_async": {"queue": "email"},

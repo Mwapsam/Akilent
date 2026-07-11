@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Bulk campaigns — Automator{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Bulk campaigns</h1>
+    <p class="text-sm text-gray-500 mt-1">Send one message to many recipients, with per-recipient variables.</p>
+  </div>
+  <a href="/email/templates/" class="btn btn-secondary btn-sm">
+    {% include "components/icon.html" with name="book-open" class="w-4 h-4" %} Templates
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if is_admin %}
+<div class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-3 text-sm text-brand-700">
+  Admin view — showing every tenant's campaigns with full access.
+</div>
+{% endif %}
+
+{% if not bulk_enabled %}
+<div class="card card-pad mb-6 border-amber-200 bg-amber-50/40">
+  <h2 class="font-semibold flex items-center gap-2">
+    {% include "components/icon.html" with name="key" class="w-4 h-4 text-amber-500" %} Bulk sending
+  </h2>
+  <p class="text-sm text-gray-600 mt-2">Your current plan doesn't include bulk email sending. <a href="/billing/plans/" class="text-brand-600 font-medium">Upgrade your plan</a> to launch a campaign.</p>
+</div>
+{% else %}
+
+{# Create campaign #}
+<div class="card card-pad mb-6">
+  <h2 class="font-semibold mb-4">New campaign</h2>
+  <form method="post" action="/email/campaigns/create/" enctype="multipart/form-data" class="grid gap-3">
+    {% csrf_token %}
+    <div class="grid sm:grid-cols-2 gap-3">
+      {% include "components/form_field.html" with name="from_email" label="From address" type="email" placeholder="hello@yourdomain.com" required=True %}
+      <div>
+        <label class="text-xs font-medium text-gray-500 mb-1.5 block">Template (optional)</label>
+        <select name="template_id" class="input">
+          <option value="">— No template, use fields below —</option>
+          {% for t in templates %}
+          <option value="{{ t.pk }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    {% include "components/form_field.html" with name="subject" label="Subject (if no template)" placeholder="Hi &#123;&#123; first_name &#125;&#125;!" %}
+    <div>
+      <label class="text-xs font-medium text-gray-500 mb-1.5 block">Text body (if no template)</label>
+      <textarea name="text_body" rows="3" class="input font-mono text-sm"></textarea>
+    </div>
+    <div>
+      <label class="text-xs font-medium text-gray-500 mb-1.5 block">HTML body (if no template)</label>
+      <textarea name="html_body" rows="4" class="input font-mono text-sm"></textarea>
+    </div>
+    <div>
+      <label class="text-xs font-medium text-gray-500 mb-1.5 block">Recipients (JSON)</label>
+      <textarea name="recipients_json" rows="4" class="input font-mono text-sm" placeholder='[{"to": "a@example.com", "variables": {"first_name": "Ada"}}]'></textarea>
+      <p class="text-xs text-gray-400 mt-1">Or upload a CSV instead — a <code>to</code> column plus any variable columns.</p>
+    </div>
+    <div>
+      <label class="text-xs font-medium text-gray-500 mb-1.5 block">Recipients (CSV upload)</label>
+      <input type="file" name="recipients_csv" accept=".csv" class="input">
+    </div>
+    <div>
+      <button class="btn btn-primary" type="submit">
+        {% include "components/icon.html" with name="chat" class="w-4 h-4" %} Launch campaign
+      </button>
+    </div>
+  </form>
+</div>
+
+{# Campaigns list #}
+<div class="table-wrap">
+  <table class="table">
+    <thead><tr>
+      <th>From</th><th>Status</th><th>Recipients</th><th>Sent</th><th>Failed</th><th>Created</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for c in campaigns %}
+      <tr>
+        <td>{{ c.from_email }}</td>
+        <td>
+          {% if c.status == 'completed' %}<span class="badge badge-success">Completed</span>
+          {% elif c.status == 'failed' or c.status == 'cancelled' %}<span class="badge badge-danger">{{ c.get_status_display }}</span>
+          {% elif c.status == 'sending' or c.status == 'queued' %}<span class="badge badge-warning">{{ c.get_status_display }}</span>
+          {% else %}<span class="badge badge-neutral">Draft</span>{% endif %}
+        </td>
+        <td>{{ c.recipient_count }}</td>
+        <td>{{ c.sent_count }}</td>
+        <td>{{ c.failed_count }}</td>
+        <td>{{ c.created_at|date:"M j, H:i" }}</td>
+        <td class="text-right"><a href="/email/campaigns/{{ c.pk }}/" class="btn btn-ghost btn-sm">View</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="text-center text-gray-400 py-8">No campaigns yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}
