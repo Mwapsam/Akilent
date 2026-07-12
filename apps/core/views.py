@@ -149,9 +149,12 @@ def docs_page(request, slug="index"):
     page = docs_kb.get_page(slug)
     if page is None:
         raise Http404("No such docs page")
+    prev_page, next_page = docs_kb.neighbors(page)
     return render(request, page.template, {
         "page": page,
         "pages": docs_kb.PAGES,
+        "prev_page": prev_page,
+        "next_page": next_page,
         "smtp_relay_host": settings.SMTP_RELAY_HOST,
         "smtp_relay_port": settings.SMTP_RELAY_PORT,
     })

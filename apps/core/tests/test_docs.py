@@ -33,6 +33,45 @@ def test_docs_nav_lists_every_page(client):
 
 
 @pytest.mark.django_db
+def test_docs_sidebar_shows_section_labels(client):
+    resp = client.get("/docs/")
+    for label in ("Getting started", "API reference", "Platform"):
+        assert escape(label).encode() in resp.content
+
+
+def test_sections_are_contiguous():
+    # {% regroup %} only groups consecutive items, so a section must never
+    # reappear after a different one.
+    seen = []
+    for page in docs_kb.PAGES:
+        if page.section not in seen:
+            seen.append(page.section)
+        else:
+            assert page.section == seen[-1], (
+                f"Section {page.section!r} is not contiguous in PAGES"
+            )
+    assert seen == ["Getting started", "API reference", "Platform"]
+
+
+def test_neighbors():
+    first, last = docs_kb.PAGES[0], docs_kb.PAGES[-1]
+    assert docs_kb.neighbors(first) == (None, docs_kb.PAGES[1])
+    assert docs_kb.neighbors(last) == (docs_kb.PAGES[-2], None)
+
+
+@pytest.mark.django_db
+def test_prev_next_pagination_renders(client):
+    resp = client.get("/docs/authentication/")
+    assert b"/docs/messages/" in resp.content  # next
+    assert b'rel="prev"' in resp.content
+    assert b'rel="next"' in resp.content
+    # First page has no "previous"
+    resp = client.get("/docs/")
+    assert b'rel="prev"' not in resp.content
+    assert b'rel="next"' in resp.content
+
+
+@pytest.mark.django_db
 def test_smtp_page_shows_relay_host_and_port(client, settings):
     settings.SMTP_RELAY_HOST = "mail.example.com"
     settings.SMTP_RELAY_PORT = 587

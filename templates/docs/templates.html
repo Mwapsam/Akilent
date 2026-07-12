@@ -24,6 +24,7 @@ Authorization: Bearer ak_live_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
   }
 ]</code></pre>
 <div class="callout">
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5 1.8 13h12.4L8 2.5Z"/><path d="M8 6.5v3"/><path d="M8 11.5h.01"/></svg>
   <p>
     This list is not paginated — it returns every active template for your
     account as a single array. If you maintain a very large template
@@ -53,7 +54,8 @@ Content-Type: application/json
   <tr><td><code>html</code></td><td>No</td><td>HTML body.</td></tr>
   <tr><td><code>sample_variables</code></td><td>No</td><td>A dict of example values, used for previewing the template — not required for sending.</td></tr>
 </table>
-<div class="callout">
+<div class="callout callout--note">
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.5v3.5"/><path d="M8 4.75h.01"/></svg>
   <p>
     <code>subject</code>, <code>text</code>, and <code>html</code> are
     rendered as Django template syntax — <code>{% templatetag openvariable %} name {% templatetag closevariable %}</code>

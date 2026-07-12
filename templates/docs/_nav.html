@@ -1,0 +1,11 @@
+{% regroup pages by section as sections %}
+{% for group in sections %}
+  <p class="docs-nav-label">{{ group.grouper }}</p>
+  {% for p in group.list %}
+    <a href="{% if p.slug == 'index' %}{% url 'docs' %}{% else %}{% url 'docs-page' p.slug %}{% endif %}"
+       class="{% if p.slug == page.slug %}active{% endif %}"
+       {% if p.slug == page.slug %}aria-current="page"{% endif %}>
+      {{ p.title }}
+    </a>
+  {% endfor %}
+{% endfor %}
