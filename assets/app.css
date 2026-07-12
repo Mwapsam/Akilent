@@ -7,7 +7,7 @@
 @source "../static/js";
 
 /* ---------------------------------------------------------------------------
-   Design tokens — Akilent brand color system (see docs/brand-colors.md)
+   Design tokens — brand color system (see docs/brand-colors.md)
    Overrides Tailwind's gray/green/red/amber/blue ramps with brand-tinted
    equivalents so every existing utility migrates from this one file.
    Everything below is consumable as utilities (bg-brand-600, shadow-card …)

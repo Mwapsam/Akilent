@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — Automator{% endblock %}
+{% block title %}Dashboard — {{ site.app_name|default:"Automator" }}{% endblock %}
 
 {% block page_header %}
 {% if account %}

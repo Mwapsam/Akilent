@@ -4,7 +4,7 @@
 <p>
   Generate a key from the <a href="/email/domains/">Domains</a> page. Keys look
   like <code>ak_live_&hellip;</code> and are shown to you <strong>once</strong>,
-  at creation — Akilent stores only a hash, not the plaintext, so if you lose
+  at creation — {{ site.app_name|default:"Automator" }} stores only a hash, not the plaintext, so if you lose
   it you'll need to regenerate rather than retrieve it.
 </p>
 <p>Send it on every request as either header:</p>

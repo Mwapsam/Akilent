@@ -4,19 +4,20 @@ from django.contrib.auth import views as auth_views
 from django.urls import path, include
 
 from apps.accounts.forms import LoginForm
+from apps.accounts.views import LoginView, LogoutView, PasswordResetView
 from apps.core import views as core_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path(
         "auth/login/",
-        auth_views.LoginView.as_view(template_name="auth/login.html", authentication_form=LoginForm),
+        LoginView.as_view(template_name="auth/login.html", authentication_form=LoginForm),
         name="login",
     ),
-    path("auth/logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     path(
         "auth/password-reset/",
-        auth_views.PasswordResetView.as_view(
+        PasswordResetView.as_view(
             template_name="auth/password_reset.html",
             email_template_name="auth/password_reset_email.txt",
             subject_template_name="auth/password_reset_subject.txt",

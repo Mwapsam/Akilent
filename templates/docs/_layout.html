@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}{{ page.title }} — Developer docs — Akilent{% endblock %}</title>
+  <title>{% block title %}{{ page.title }} — Developer docs — {{ site.app_name|default:"Automator" }}{% endblock %}</title>
   <meta name="description" content="{{ page.summary }}">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -145,7 +145,7 @@
     <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
       <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5 shrink-0 text-white">
         <span class="w-2 h-2 rounded-full bg-[#1FAF9C]"></span>
-        Akilent
+        {{ site.app_name|default:"Automator" }}
       </a>
 
       <nav class="hidden md:flex items-center gap-7 text-[13px] font-medium" aria-label="Primary">
@@ -241,7 +241,7 @@
 
   <footer class="bg-ink border-t border-hairline">
     <div class="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs text-[#838EA3]">
-      <span>© Akilent · Communications infrastructure for business</span>
+      <span>© {{ site.app_name|default:"Automator" }} · Communications infrastructure for business</span>
       <span class="flex items-center gap-4">
         <a href="/#platform" class="hover:text-white">Platform</a>
         <a href="/#pricing" class="hover:text-white">Pricing</a>

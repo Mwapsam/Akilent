@@ -1,7 +1,7 @@
 {% extends "docs/_layout.html" %}
 {% block docs_content %}
 <p>
-  Akilent's Developer Platform lets you send transactional email four ways: a
+  {{ site.app_name|default:"Automator" }}'s Developer Platform lets you send transactional email four ways: a
   versioned REST API, reusable templates, bulk campaigns, direct SMTP relay,
   and signed webhooks for delivery, open, and click events. All of it sits on
   top of the same domain verification and plan limits as the web dashboard.

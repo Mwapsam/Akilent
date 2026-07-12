@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import login
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
@@ -18,6 +19,47 @@ from apps.accounts.models import Account, Membership
 from apps.accounts.utils import get_current_account, set_current_account
 
 logger = logging.getLogger(__name__)
+
+
+class _RestoreSiteBrandingMixin:
+    """Restore the SiteSettings-based ``site`` template variable.
+
+    LoginView/LogoutView.get_context_data() unconditionally overwrite ``site``
+    with django.contrib.sites' get_current_site() (a RequestSite here, since
+    that framework isn't installed), clobbering the SiteSettings object our
+    own site_context processor already put there — so ``{{ site.app_name }}``
+    silently resolves to nothing and templates fall back to "Automator".
+    """
+
+    def get_context_data(self, **kwargs):
+        from apps.core.models import SiteSettings
+
+        context = super().get_context_data(**kwargs)
+        context["site"] = SiteSettings.load()
+        return context
+
+
+class LoginView(_RestoreSiteBrandingMixin, auth_views.LoginView):
+    pass
+
+
+class LogoutView(_RestoreSiteBrandingMixin, auth_views.LogoutView):
+    pass
+
+
+class PasswordResetView(auth_views.PasswordResetView):
+    """Password reset that emails the dashboard's configured app name.
+
+    Django's default resolves ``site_name`` from django.contrib.sites (not
+    installed here), which falls back to the request's raw domain instead of
+    the branding configured in SiteSettings.
+    """
+
+    def form_valid(self, form):
+        from apps.core.models import SiteSettings
+
+        self.extra_email_context = {"site_name": SiteSettings.load().app_name or "Automator"}
+        return super().form_valid(form)
 
 
 def _send_verification_email(request, user):
