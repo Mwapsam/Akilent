@@ -461,12 +461,15 @@ def manual_submit(request):
         messages.error(request, "A payment reference is required.")
         return redirect(f"/billing/checkout/?plan={plan.slug}&method=manual")
 
-    ManualPaymentRequest.objects.create(
+    req = ManualPaymentRequest.objects.create(
         account=account,
         plan=plan,
         reference=reference,
         proof=request.FILES.get("proof"),
     )
+    from .tasks import notify_admins_of_manual_payment
+    notify_admins_of_manual_payment.delay(req.pk)
+
     messages.success(request, "Payment submitted. An admin will review it shortly.")
     return redirect("/billing/plans/")
 

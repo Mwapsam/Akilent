@@ -215,6 +215,13 @@ if not DEBUG and BITRIX_ENABLED:
             "BITRIX_CLIENT_SECRET missing"
         )
 
+# --- Slack ---
+
+# Incoming webhook URL for admin alerts (e.g. manual payment review requests).
+# Create one at https://api.slack.com/messaging/webhooks. Blank disables
+# posting — this isn't required in production the way email/Stalwart are.
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
+
 # --- Email (Stalwart Mail Server) ---
 
 # Stalwart HTTP Management API — provisions per-tenant domains, DKIM,

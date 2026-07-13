@@ -1,9 +1,18 @@
 import logging
 
 from celery import shared_task
+from django.conf import settings
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _absolute_url(path: str) -> str:
+    base_domain = getattr(settings, "BASE_DOMAIN", "") or settings.ALLOWED_HOSTS[0]
+    scheme = "http" if settings.DEBUG else "https"
+    return f"{scheme}://{base_domain}{path}"
 
 
 @shared_task
@@ -26,3 +35,52 @@ def reset_monthly_usage():
     so no reset is needed — new month = new row. This task is a heartbeat.
     """
     logger.info("reset_monthly_usage: heartbeat at %s", timezone.now().date())
+
+
+@shared_task
+def notify_admins_of_manual_payment(request_id: int) -> None:
+    """Alert admins (email + Slack) that a bank-transfer payment needs review.
+
+    Each channel is independent — a broken Slack webhook must not stop the
+    email, and vice versa, since either one alone is enough for an admin to
+    notice and act.
+    """
+    from django.contrib.auth.models import User
+
+    from apps.billing.models import ManualPaymentRequest
+
+    try:
+        req = ManualPaymentRequest.objects.select_related("account", "plan").get(pk=request_id)
+    except ManualPaymentRequest.DoesNotExist:
+        logger.error("notify_admins_of_manual_payment: request %s not found", request_id)
+        return
+
+    ctx = {
+        "account": req.account,
+        "plan": req.plan,
+        "reference": req.reference,
+        "review_url": _absolute_url("/billing/plans/"),
+    }
+
+    admin_emails = list(
+        User.objects.filter(is_superuser=True, is_active=True).exclude(email="").values_list("email", flat=True)
+    )
+    if admin_emails:
+        subject = render_to_string("billing/manual_payment_admin_subject.txt", ctx).strip()
+        body = render_to_string("billing/manual_payment_admin.txt", ctx)
+        try:
+            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, admin_emails, fail_silently=False)
+        except Exception:
+            logger.exception("notify_admins_of_manual_payment: email failed for request=%s", request_id)
+    else:
+        logger.warning("notify_admins_of_manual_payment: no admin emails to notify")
+
+    try:
+        from apps.billing.slack import post_message
+
+        post_message(
+            f":bank: New bank transfer to review — *{req.account}* on *{req.plan.name}* "
+            f"(ref: {req.reference or '—'})\n{ctx['review_url']}"
+        )
+    except Exception:
+        logger.exception("notify_admins_of_manual_payment: slack post failed for request=%s", request_id)

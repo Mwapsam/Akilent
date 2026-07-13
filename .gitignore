@@ -44,3 +44,6 @@ celerybeat-schedule-wal
 celerybeat-schedule
 # Node (Tailwind CLI rebuilds — installed transiently)
 node_modules/
+templates/billing/manual_payment_admin_subject.txt
+.gitignore
+templates/billing/manual_payment_admin.txt
