@@ -1,10 +1,10 @@
-{% comment %}Brand logo mark: the uploaded site logo, else the default icon tile.
+{% comment %}Brand logo mark: the uploaded site logo, else the default Akilent icon.
 Usage: include components/brand_mark.html with class="w-9 h-9"{% endcomment %}
+{% load static %}
 {% if site and site.logo %}
   <img src="{{ site.logo.url }}" alt="{{ site.app_name }}"
        class="{{ class|default:'w-9 h-9' }} rounded-xl object-cover shrink-0">
 {% else %}
-  <span class="inline-flex items-center justify-center {{ class|default:'w-9 h-9' }} rounded-xl bg-brand-600 text-white shrink-0">
-    {% include "components/icon.html" with name="sparkles" class="w-5 h-5" %}
-  </span>
+  <img src="{% static 'img/brand/icon-color.svg' %}" alt="{{ site.app_name|default:'Automator' }}"
+       class="{{ class|default:'w-9 h-9' }} shrink-0">
 {% endif %}

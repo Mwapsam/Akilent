@@ -6,6 +6,7 @@
   <title>{{ site.app_name|default:"Automator" }} — Communications infrastructure for business</title>
   <meta name="description" content="{{ site.app_name|default:"Automator" }} connects WhatsApp Business messaging, transactional email, and automated workflows into a unified communications platform.">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="icon" type="image/svg+xml" href="{% static 'img/brand/icon-color.svg' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -271,7 +272,7 @@
   <header class="border-b border-hairline sticky top-0 z-30 bg-ink/90 backdrop-blur-md">
     <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
       <a href="/" class="font-display font-semibold text-lg flex items-center gap-2.5 shrink-0">
-        <span class="w-2 h-2 rounded-full bg-[#1FAF9C] pulse-ring"></span>
+        <img src="{% static 'img/brand/icon-color-on-dark.svg' %}" alt="" class="w-6 h-6">
         {{ site.app_name|default:"Automator" }}
       </a>
 
