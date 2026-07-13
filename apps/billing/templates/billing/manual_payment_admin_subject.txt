@@ -1,0 +1,1 @@
+Manual payment request from {{ account.company_name }}

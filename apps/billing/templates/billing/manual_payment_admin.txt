@@ -1,0 +1,7 @@
+A manual payment request needs review.
+
+Account: {{ account.company_name }}
+Plan: {{ plan.name }}
+Reference: {{ reference }}
+
+Review it here: {{ review_url }}
