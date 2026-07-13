@@ -4,6 +4,7 @@
   {% include "components/form_field.html" with name="name" label="Name" value=plan.name required=True %}
   {% include "components/form_field.html" with name="price_monthly" label="Price /mo (USD)" type="number" value=plan.price_monthly|default:0 %}
   {% include "components/form_field.html" with name="max_emails_per_month" label="Max emails/mo (-1 = ∞)" type="number" value=plan.max_emails_per_month|default:0 %}
+  {% include "components/form_field.html" with name="max_bulk_recipients_per_campaign" label="Max recipients/campaign (-1 = ∞)" type="number" value=plan.max_bulk_recipients_per_campaign|default:500 %}
   {% include "components/form_field.html" with name="max_mailboxes" label="Max mailboxes (-1 = ∞)" type="number" value=plan.max_mailboxes|default:0 %}
   {% include "components/form_field.html" with name="mailbox_storage_gb" label="Storage per mailbox (GB)" type="number" value=plan.mailbox_storage_gb|default:0 %}
   {% include "components/form_field.html" with name="max_forwarding_rules" label="Forwarding rules (-1 = ∞)" type="number" value=plan.max_forwarding_rules|default:0 %}
@@ -29,6 +30,9 @@
   </label>
   <label class="flex items-center gap-2 text-sm">
     <input type="checkbox" name="detailed_analytics" class="rounded border-border-strong" {% if plan.detailed_analytics %}checked{% endif %}> Detailed analytics &amp; insights
+  </label>
+  <label class="flex items-center gap-2 text-sm">
+    <input type="checkbox" name="bulk_email" class="rounded border-border-strong" {% if plan.bulk_email %}checked{% endif %}> Bulk email campaigns
   </label>
   <label class="flex items-center gap-2 text-sm">
     <input type="checkbox" name="has_priority_support" class="rounded border-border-strong" {% if plan.has_priority_support %}checked{% endif %}> Priority support

@@ -8,7 +8,7 @@ class PlanAdmin(admin.ModelAdmin):
     list_display = [
         "name", "slug", "price_monthly",
         "max_conversations_per_month", "max_emails_per_month", "max_automation_rules",
-        "max_whatsapp_numbers", "trial_days", "has_priority_support", "is_active",
+        "max_whatsapp_numbers", "trial_days", "has_priority_support", "bulk_email", "is_active",
     ]
     list_filter = ["is_active", "has_priority_support"]
     search_fields = ["name", "slug"]

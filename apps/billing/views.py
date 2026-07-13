@@ -87,6 +87,7 @@ def _plan_form_fields(post):
         "max_aliases": _int("max_aliases"),
         "max_automation_rules": _int("max_automation_rules"),
         "max_whatsapp_numbers": _int("max_whatsapp_numbers"),
+        "max_bulk_recipients_per_campaign": _int("max_bulk_recipients_per_campaign", 500),
         "trial_days": _int("trial_days"),
         "log_retention_days": _int("log_retention_days"),
         "flutterwave_plan_id": (post.get("flutterwave_plan_id") or "").strip() or None,
@@ -95,6 +96,7 @@ def _plan_form_fields(post):
         "inbound_email": "inbound_email" in post,
         "tracking_webhooks": "tracking_webhooks" in post,
         "detailed_analytics": "detailed_analytics" in post,
+        "bulk_email": "bulk_email" in post,
         "is_active": "is_active" in post,
     }
 
