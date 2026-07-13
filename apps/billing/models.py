@@ -94,6 +94,11 @@ class Subscription(models.Model):
     fw_customer_email = models.CharField(max_length=255, blank=True, null=True)
     fw_subscription_id = models.CharField(max_length=100, blank=True, null=True)
 
+    # Which payment method activated the current period — audit/display only,
+    # the gateway-specific fields above (fw_*) remain the source of truth for
+    # recurring-billing operations on Flutterwave-activated subscriptions.
+    payment_method = models.CharField(max_length=20, blank=True, default="")
+
     cancelled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -111,6 +116,66 @@ class Subscription(models.Model):
     @property
     def is_trialing(self):
         return self.status == self.TRIALING
+
+
+class PaymentMethod(models.Model):
+    """Admin-configurable payment option (gateway).
+
+    ``code`` must match a key registered in ``apps.billing.gateways.registry``.
+    Enabling/disabling here is what controls what tenants see at checkout —
+    the gateway implementation itself stays code-only.
+    """
+
+    code = models.SlugField(max_length=30, unique=True)
+    name = models.CharField(max_length=100)
+    is_enabled = models.BooleanField(default=False)
+    # Free-form instructions shown to the customer at checkout — e.g. bank
+    # account / mobile money details for the manual gateway. Unused by
+    # hosted gateways like Flutterwave.
+    instructions = models.TextField(blank=True, default="")
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ManualPaymentRequest(models.Model):
+    """A tenant-submitted offline payment awaiting admin approval."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+    STATUS_CHOICES = [
+        (PENDING, "Pending"),
+        (APPROVED, "Approved"),
+        (REJECTED, "Rejected"),
+    ]
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="manual_payment_requests"
+    )
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="manual_payment_requests")
+    reference = models.CharField(max_length=255, blank=True, default="")
+    proof = models.FileField(upload_to="manual_payments/", blank=True, null=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    note = models.TextField(blank=True, default="")
+    reviewed_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.account} — {self.plan.name} ({self.status})"
 
 
 class ProcessedWebhookEvent(models.Model):

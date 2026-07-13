@@ -101,6 +101,7 @@ def settings_page(request):
         site.whatsapp_enabled = "whatsapp_enabled" in request.POST
         site.bitrix_enabled = "bitrix_enabled" in request.POST
         site.signups_enabled = "signups_enabled" in request.POST
+        site.payments_enabled = "payments_enabled" in request.POST
         dp = request.POST.get("default_plan") or None
         site.default_plan = Plan.objects.filter(pk=dp).first() if dp else None
         try:

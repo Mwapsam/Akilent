@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Plan, Subscription, UsageSummary
+from .models import ManualPaymentRequest, PaymentMethod, Plan, Subscription, UsageSummary
 
 
 @admin.register(Plan)
@@ -33,3 +33,19 @@ class UsageSummaryAdmin(admin.ModelAdmin):
     list_filter = ["period_start"]
     search_fields = ["account__company_name"]
     raw_id_fields = ["account"]
+
+
+@admin.register(PaymentMethod)
+class PaymentMethodAdmin(admin.ModelAdmin):
+    list_display = ["name", "code", "is_enabled", "sort_order"]
+    list_filter = ["is_enabled"]
+    search_fields = ["name", "code"]
+
+
+@admin.register(ManualPaymentRequest)
+class ManualPaymentRequestAdmin(admin.ModelAdmin):
+    list_display = ["account", "plan", "status", "reference", "reviewed_by", "created_at"]
+    list_filter = ["status", "plan"]
+    search_fields = ["account__company_name", "reference"]
+    raw_id_fields = ["account"]
+    readonly_fields = ["created_at"]

@@ -1,7 +1,5 @@
 import json
 import logging
-import uuid
-from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -13,8 +11,11 @@ from django.views.decorators.http import require_POST
 from django.conf import settings
 
 from apps.accounts.utils import get_current_account
-from .models import Plan, ProcessedWebhookEvent, Subscription, UsageSummary
+from apps.core.models import SiteSettings
+from .models import ManualPaymentRequest, Plan, PaymentMethod, ProcessedWebhookEvent, Subscription, UsageSummary
 from .flutterwave import FlutterwaveError, get_fw_client
+from .gateways import enabled_payment_methods, get_gateway
+from .services import activate_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def pricing_page(request):
     plans = list(plan_qs.order_by("price_monthly"))
     subscription = getattr(account, "subscription", None) if account else None
     current_plan_slug = subscription.plan.slug if subscription else None
+    site = SiteSettings.load()
 
     return render(request, "billing/plans.html", {
         "plans": plans,
@@ -50,6 +52,13 @@ def pricing_page(request):
         "current_plan_slug": current_plan_slug,
         "conversations_used": UsageSummary.get_current_usage(account) if account else 0,
         "emails_used": UsageSummary.get_current_email_usage(account) if account else 0,
+        "payments_enabled": site.payments_enabled,
+        "payment_methods": enabled_payment_methods() if site.payments_enabled else [],
+        "payment_method_rows": PaymentMethod.objects.all() if is_admin else None,
+        "manual_requests": (
+            ManualPaymentRequest.objects.filter(status=ManualPaymentRequest.PENDING)
+            .select_related("account", "plan") if is_admin else None
+        ),
     })
 
 
@@ -164,45 +173,26 @@ def checkout(request):
     if account is None:
         return redirect("/dashboard/")
 
+    if not SiteSettings.load().payments_enabled:
+        messages.error(request, "Billing is currently disabled. Contact support.")
+        return redirect("/billing/plans/")
+
     plan_slug = request.GET.get("plan")
     plan = get_object_or_404(Plan, slug=plan_slug, is_active=True)
     if plan.slug == Plan.TRIAL:
         messages.error(request, "Trial plan cannot be purchased.")
         return redirect("/billing/plans/")
 
-    tx_ref = f"sub_{account.pk}_{plan.slug}_{uuid.uuid4().hex[:8]}"
-    currency = getattr(settings, "FLUTTERWAVE_CURRENCY", "USD")
-    redirect_url = request.build_absolute_uri("/billing/callback/")
-
-    try:
-        fw = get_fw_client()
-        # Ensure a recurring payment plan exists so the charge auto-renews monthly.
-        if not plan.flutterwave_plan_id:
-            fp = fw.create_payment_plan(
-                name=plan.name, amount=plan.price_monthly, interval="monthly", currency=currency
-            )
-            plan.flutterwave_plan_id = str(fp.get("id") or "")
-            plan.save(update_fields=["flutterwave_plan_id"])
-        link = fw.initialize_payment(
-            tx_ref=tx_ref,
-            amount=plan.price_monthly,
-            currency=currency,
-            customer_email=request.user.email or f"admin+{account.pk}@automator.local",
-            customer_name=account.company_name or request.user.username,
-            redirect_url=redirect_url,
-            payment_plan_id=plan.flutterwave_plan_id,
-            meta={"account_id": account.pk, "plan_slug": plan.slug},
-        )
-    except FlutterwaveError as exc:
-        logger.error("checkout: FW error for account=%s plan=%s: %s", account.pk, plan.slug, exc)
-        messages.error(request, f"Payment initialization failed: {exc}")
+    method_code = request.GET.get("method")
+    method = PaymentMethod.objects.filter(code=method_code, is_enabled=True).first() if method_code else None
+    if method is None:
+        method = enabled_payment_methods()[0] if enabled_payment_methods() else None
+    gateway = get_gateway(method.code) if method else None
+    if gateway is None:
+        messages.error(request, "No payment method is currently available. Contact support.")
         return redirect("/billing/plans/")
 
-    request.session["pending_tx_ref"] = tx_ref
-    request.session["pending_account_id"] = account.pk
-    request.session["pending_plan_slug"] = plan.slug
-
-    return redirect(link)
+    return gateway.start_checkout(request, account, plan)
 
 
 def callback(request):
@@ -252,20 +242,8 @@ def callback(request):
         messages.error(request, "Payment amount did not match the plan. Contact support if charged.")
         return redirect("/billing/plans/")
 
-    now = timezone.now()
     cust_email = (transaction.get("customer") or {}).get("email")
-    Subscription.objects.update_or_create(
-        account=account,
-        defaults={
-            "plan": plan,
-            "status": Subscription.ACTIVE,
-            "current_period_start": now,
-            "current_period_end": now + timedelta(days=30),
-            "fw_customer_email": cust_email,
-            "trial_ends_at": None,
-            "cancelled_at": None,
-        },
-    )
+    activate_subscription(account, plan, "flutterwave", fw_customer_email=cust_email)
 
     # Capture the Flutterwave recurring-subscription id so it can be cancelled later.
     if plan.flutterwave_plan_id and cust_email:
@@ -434,16 +412,8 @@ def _handle_charge_completed(payload: dict):
         )
         return
 
-    now = timezone.now()
-    sub.plan = plan
-    sub.status = Subscription.ACTIVE
-    sub.current_period_start = now
-    sub.current_period_end = now + timedelta(days=30)
-    sub.fw_customer_email = (verified.get("customer") or {}).get("email") or sub.fw_customer_email
-    sub.save(update_fields=[
-        "plan", "status", "current_period_start", "current_period_end",
-        "fw_customer_email", "updated_at",
-    ])
+    cust_email = (verified.get("customer") or {}).get("email") or sub.fw_customer_email
+    activate_subscription(sub.account, plan, "flutterwave", fw_customer_email=cust_email)
 
     logger.info("_handle_charge_completed: renewed subscription for account=%s", account_id)
 
@@ -463,3 +433,95 @@ def _handle_subscription_cancelled(payload: dict):
     )
     if updated:
         logger.info("_handle_subscription_cancelled: cancelled subscription for account=%s", account_id)
+
+
+# --- Manual (offline) payments -------------------------------------------------
+
+@login_required
+@require_POST
+def manual_submit(request):
+    """Tenant submits a reference/proof for an offline payment; goes into the
+    admin review queue rather than activating anything immediately."""
+    account = get_current_account(request)
+    if account is None:
+        return redirect("/dashboard/")
+
+    if not SiteSettings.load().payments_enabled:
+        messages.error(request, "Billing is currently disabled. Contact support.")
+        return redirect("/billing/plans/")
+
+    method = PaymentMethod.objects.filter(code="manual", is_enabled=True).first()
+    if method is None:
+        messages.error(request, "Bank transfer is not currently available.")
+        return redirect("/billing/plans/")
+
+    plan = get_object_or_404(Plan, slug=request.POST.get("plan"), is_active=True)
+    reference = (request.POST.get("reference") or "").strip()
+    if not reference:
+        messages.error(request, "A payment reference is required.")
+        return redirect(f"/billing/checkout/?plan={plan.slug}&method=manual")
+
+    ManualPaymentRequest.objects.create(
+        account=account,
+        plan=plan,
+        reference=reference,
+        proof=request.FILES.get("proof"),
+    )
+    messages.success(request, "Payment submitted. An admin will review it shortly.")
+    return redirect("/billing/plans/")
+
+
+@login_required
+@require_POST
+def manual_approve(request, pk):
+    if not request.user.is_superuser:
+        return redirect("/billing/plans/")
+    req = get_object_or_404(ManualPaymentRequest, pk=pk, status=ManualPaymentRequest.PENDING)
+    activate_subscription(req.account, req.plan, "manual")
+    req.status = ManualPaymentRequest.APPROVED
+    req.reviewed_by = request.user
+    req.reviewed_at = timezone.now()
+    req.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+    messages.success(request, f"Approved — {req.account} is now on {req.plan.name}.")
+    return redirect("billing:plans")
+
+
+@login_required
+@require_POST
+def manual_reject(request, pk):
+    if not request.user.is_superuser:
+        return redirect("/billing/plans/")
+    req = get_object_or_404(ManualPaymentRequest, pk=pk, status=ManualPaymentRequest.PENDING)
+    req.status = ManualPaymentRequest.REJECTED
+    req.note = (request.POST.get("note") or "").strip()
+    req.reviewed_by = request.user
+    req.reviewed_at = timezone.now()
+    req.save(update_fields=["status", "note", "reviewed_by", "reviewed_at"])
+    messages.success(request, "Payment request rejected.")
+    return redirect("billing:plans")
+
+
+@login_required
+@require_POST
+def payment_method_toggle(request, pk):
+    if not request.user.is_superuser:
+        return redirect("/billing/plans/")
+    method = get_object_or_404(PaymentMethod, pk=pk)
+    method.is_enabled = not method.is_enabled
+    method.save(update_fields=["is_enabled"])
+    messages.success(
+        request, f"'{method.name}' {'enabled' if method.is_enabled else 'disabled'}."
+    )
+    return redirect("billing:plans")
+
+
+@login_required
+@require_POST
+def payment_method_edit(request, pk):
+    if not request.user.is_superuser:
+        return redirect("/billing/plans/")
+    method = get_object_or_404(PaymentMethod, pk=pk)
+    method.instructions = (request.POST.get("instructions") or "").strip()
+    method.save(update_fields=["instructions"])
+    messages.success(request, f"'{method.name}' instructions updated.")
+    return redirect("billing:plans")

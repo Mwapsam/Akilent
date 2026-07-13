@@ -17,6 +17,7 @@ class SiteSettings(models.Model):
     whatsapp_enabled = models.BooleanField(default=True)
     bitrix_enabled = models.BooleanField(default=True)
     signups_enabled = models.BooleanField(default=True)
+    payments_enabled = models.BooleanField(default=True)
 
     # New-signup defaults
     default_plan = models.ForeignKey(

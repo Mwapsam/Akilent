@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Bank transfer — {{ plan.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">Pay by bank transfer</h1>
+    <p class="text-sm text-gray-400 mt-1">{{ plan.name }} · ${{ plan.price_monthly|floatformat:0 }}/mo</p>
+  </div>
+
+  <div class="card card-pad mb-6">
+    <h2 class="font-semibold mb-2">Instructions</h2>
+    {% if instructions %}
+      <p class="text-sm text-gray-600 whitespace-pre-line">{{ instructions }}</p>
+    {% else %}
+      <p class="text-sm text-gray-400">Contact support for bank transfer details.</p>
+    {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="font-semibold mb-4">Submit your payment reference</h2>
+    <form method="post" action="{% url 'billing:manual-submit' %}" enctype="multipart/form-data" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="plan" value="{{ plan.slug }}">
+      {% include "components/form_field.html" with name="reference" label="Transaction reference / sender name" required=True %}
+      <div>
+        <label class="label" for="id_proof">Proof of payment (optional)</label>
+        <input id="id_proof" name="proof" type="file"
+               class="block text-sm text-gray-600 file:mr-3 file:btn file:btn-secondary file:btn-sm file:border-0">
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Submit for review</button>
+      <p class="help text-center">An admin will review and activate your plan once payment is confirmed.</p>
+    </form>
+  </div>
+</div>
+{% endblock %}
