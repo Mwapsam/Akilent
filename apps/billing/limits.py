@@ -71,7 +71,9 @@ class LimitChecker:
         if plan.max_mailboxes == -1:
             return
         from apps.email.models import Mailbox
-        count = Mailbox.objects.filter(account=self.account).count()
+        count = Mailbox.objects.filter(account=self.account).exclude(
+            status=Mailbox.Status.FAILED
+        ).count()
         if count >= plan.max_mailboxes:
             raise PlanLimitExceeded(
                 f"Mailbox limit of {plan.max_mailboxes} reached. "
