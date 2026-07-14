@@ -15,9 +15,11 @@ from apps.api.serializers import (
     TemplateSerializer,
 )
 from apps.api.services import (
+    clone_template,
     create_and_queue_campaign,
     create_and_queue_message,
     create_template,
+    render_template_preview,
     update_template,
 )
 from apps.api.throttling import ApiKeyRateThrottle
@@ -97,6 +99,8 @@ class TemplateListCreateView(APIView):
             text_body=data.get("text", ""),
             html_body=data.get("html", ""),
             sample_variables=data.get("sample_variables"),
+            content_blocks=data.get("content_blocks"),
+            builder_mode=data.get("builder_mode", "raw"),
         )
         request.auth.touch()
         return Response(
@@ -127,6 +131,8 @@ class TemplateDetailView(APIView):
                 "text": t.text_body,
                 "html": t.html_body,
                 "sample_variables": t.sample_variables,
+                "content_blocks": t.content_blocks,
+                "builder_mode": t.builder_mode,
             }
         )
 
@@ -140,6 +146,8 @@ class TemplateDetailView(APIView):
             text=data.get("text") if "text" in request.data else None,
             html=data.get("html") if "html" in request.data else None,
             sample_variables=request.data.get("sample_variables"),
+            content_blocks=request.data.get("content_blocks"),
+            builder_mode=request.data.get("builder_mode"),
         )
         return Response({"id": t.id, "name": t.name, "slug": t.slug})
 
@@ -148,6 +156,40 @@ class TemplateDetailView(APIView):
         t.is_active = False
         t.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TemplateRenderView(APIView):
+    """POST /api/v1/templates/<slug>/render — render subject/text/html with variables."""
+
+    authentication_classes = [EmailApiKeyAuthentication]
+    permission_classes = [HasEmailApiFeature, HasEmailTemplatesFeature, HasScope]
+    throttle_classes = [ApiKeyRateThrottle]
+    required_scope = "templates:manage"
+
+    def post(self, request, slug, *args, **kwargs):
+        template = EmailTemplate.objects.get(account=request.user, slug=slug)
+        variables = request.data.get("variables") if isinstance(request.data, dict) else None
+        result = render_template_preview(template=template, variables=variables)
+        request.auth.touch()
+        return Response(result)
+
+
+class TemplateCloneView(APIView):
+    """POST /api/v1/templates/<slug>/clone — duplicate a template."""
+
+    authentication_classes = [EmailApiKeyAuthentication]
+    permission_classes = [HasEmailApiFeature, HasEmailTemplatesFeature, HasScope]
+    throttle_classes = [ApiKeyRateThrottle]
+    required_scope = "templates:manage"
+
+    def post(self, request, slug, *args, **kwargs):
+        template = EmailTemplate.objects.get(account=request.user, slug=slug)
+        clone = clone_template(template=template)
+        request.auth.touch()
+        return Response(
+            {"id": clone.id, "name": clone.name, "slug": clone.slug},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CampaignCreateView(APIView):

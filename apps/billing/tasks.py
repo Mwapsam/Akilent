@@ -3,7 +3,6 @@ import logging
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -66,8 +65,14 @@ def notify_admins_of_manual_payment(request_id: int) -> None:
         User.objects.filter(is_superuser=True, is_active=True).exclude(email="").values_list("email", flat=True)
     )
     if admin_emails:
-        subject = render_to_string("billing/manual_payment_admin_subject.txt", ctx).strip()
-        body = render_to_string("billing/manual_payment_admin.txt", ctx)
+        from apps.email.services.system_templates import render_system_email
+
+        subject, body = render_system_email(
+            "billing.manual_payment_admin",
+            ctx,
+            fallback_subject_template="billing/manual_payment_admin_subject.txt",
+            fallback_body_template="billing/manual_payment_admin.txt",
+        )
         try:
             send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, admin_emails, fail_silently=False)
         except Exception:

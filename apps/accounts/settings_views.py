@@ -15,7 +15,6 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -50,14 +49,19 @@ def _can_manage_team(membership) -> bool:
 
 def _send_invitation_email(request, invite):
     from apps.core.models import SiteSettings
+    from apps.email.services.system_templates import render_system_email
 
     site_name = SiteSettings.load().app_name or "Automator"
     link = request.build_absolute_uri(
         reverse("accept-invitation", kwargs={"token": invite.token})
     )
     ctx = {"invite": invite, "site_name": site_name, "link": link, "inviter": invite.invited_by}
-    subject = render_to_string("accounts/invite_email_subject.txt", ctx).strip()
-    body = render_to_string("accounts/invite_email.txt", ctx)
+    subject, body = render_system_email(
+        "accounts.invite",
+        ctx,
+        fallback_subject_template="accounts/invite_email_subject.txt",
+        fallback_body_template="accounts/invite_email.txt",
+    )
     send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [invite.email], fail_silently=False)
 
 

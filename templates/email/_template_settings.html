@@ -1,0 +1,32 @@
+{% comment %}
+Shared template-level settings (Name, Subject, sample variables), included by
+both raw and blocks editor modes. Inputs carry form="raw-editor-form" so raw
+mode's single POST includes them even though they live outside that <form> in
+the DOM — blocks mode ignores the unmatched attribute and reads .value via JS
+instead (see email-builder.js).
+{% endcomment %}
+<div id="template-settings-card" class="card card-pad mb-4">
+  <h2 class="font-semibold mb-3">Template settings</h2>
+  <div class="grid sm:grid-cols-2 gap-3">
+    <div>
+      <label class="label" for="tpl-name">Name</label>
+      <input id="tpl-name" name="name" form="raw-editor-form" type="text" required
+             value="{{ template.name }}" class="input">
+    </div>
+    <div>
+      <label class="label" for="tpl-slug">Slug</label>
+      <input id="tpl-slug" type="text" value="{{ template.slug }}" disabled class="input font-mono text-sm">
+    </div>
+  </div>
+  <div class="mt-3">
+    <label class="label" for="tpl-subject">Subject</label>
+    <input id="tpl-subject" name="subject" form="raw-editor-form" type="text" required
+           value="{{ template.subject }}" class="input" data-merge-tags='{{ merge_tag_paths_json }}'>
+  </div>
+  <div class="mt-3">
+    <label class="label" for="tpl-sample-variables">Sample variables <span class="text-gray-400 font-normal">(used to fill merge tags in the preview)</span></label>
+    <textarea id="tpl-sample-variables" name="sample_variables" form="raw-editor-form" rows="4"
+              class="input font-mono text-xs">{{ sample_variables_json }}</textarea>
+    <p class="help">JSON, e.g. <code>&#123;"first_name": "Ada", "contact": &#123;"phone": "555-0100"&#125;&#125;</code></p>
+  </div>
+</div>

@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -945,8 +946,7 @@ def template_create(request):
 
 
 @login_required
-@require_POST
-def template_edit(request, pk):
+def template_edit_form(request, pk):
     from apps.email.models import EmailTemplate
 
     admin = _is_admin(request)
@@ -954,13 +954,179 @@ def template_edit(request, pk):
     if account is None and not admin:
         return redirect("dashboard")
 
+    from apps.email.services import flatten_variable_paths
+
     template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+    mode = request.GET.get("mode") or template.builder_mode
+    if mode not in (EmailTemplate.BuilderMode.RAW, EmailTemplate.BuilderMode.BLOCKS):
+        mode = EmailTemplate.BuilderMode.RAW
+
+    merge_tag_paths = flatten_variable_paths(template.sample_variables) if template.sample_variables else []
+
+    builder_config = json.dumps({
+        "html": template.html_body,
+        "projectData": template.content_blocks or {},
+        "mergeTags": merge_tag_paths,
+        "saveUrl": f"/email/templates/{template.pk}/edit/",
+        "previewUrl": f"/email/templates/{template.pk}/preview/",
+        "uploadUrl": "/email/templates/assets/upload/",
+        "csrfToken": get_token(request),
+        "name": template.name,
+        "subject": template.subject,
+        "sampleVariables": template.sample_variables or {},
+        "updatedAt": template.updated_at.isoformat(),
+        "mode": mode,
+    })
+
+    return render(request, "email/template_edit.html", {
+        "account": account,
+        "is_admin": admin,
+        "template": template,
+        "mode": mode,
+        "builder_config": builder_config,
+        "merge_tag_paths_json": json.dumps(merge_tag_paths),
+        "sample_variables_json": json.dumps(template.sample_variables or {}, indent=2),
+    })
+
+
+@login_required
+@require_POST
+def template_edit(request, pk):
+    import json as json_module
+
+    from apps.email.models import EmailTemplate, EmailTemplateVersion
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+
+    autosave = request.POST.get("autosave") == "1" or is_ajax(request)
+
+    if not autosave:
+        EmailTemplateVersion.objects.create(
+            template=template,
+            subject=template.subject,
+            text_body=template.text_body,
+            html_body=template.html_body,
+            content_blocks=template.content_blocks,
+            created_by=request.user if request.user.is_authenticated else None,
+        )
+
     template.name = (request.POST.get("name") or template.name).strip()
     template.subject = request.POST.get("subject") or ""
     template.text_body = request.POST.get("text_body") or ""
     template.html_body = request.POST.get("html_body") or ""
-    template.save(update_fields=["name", "subject", "text_body", "html_body", "updated_at"])
+
+    update_fields = ["name", "subject", "text_body", "html_body", "updated_at"]
+
+    content_blocks_raw = request.POST.get("content_blocks")
+    if content_blocks_raw is not None:
+        try:
+            template.content_blocks = json_module.loads(content_blocks_raw)
+        except json_module.JSONDecodeError:
+            pass
+        else:
+            update_fields.append("content_blocks")
+
+    sample_variables_raw = request.POST.get("sample_variables")
+    if sample_variables_raw is not None:
+        try:
+            template.sample_variables = json_module.loads(sample_variables_raw)
+        except json_module.JSONDecodeError:
+            pass
+        else:
+            update_fields.append("sample_variables")
+
+    builder_mode = request.POST.get("builder_mode")
+    if builder_mode in (EmailTemplate.BuilderMode.RAW, EmailTemplate.BuilderMode.BLOCKS):
+        template.builder_mode = builder_mode
+        update_fields.append("builder_mode")
+
+    template.save(update_fields=update_fields)
+
+    if autosave:
+        return JsonResponse({"saved": True, "updated_at": template.updated_at.isoformat()})
+
     messages.success(request, "Template updated.")
+    return redirect("email-templates")
+
+
+@login_required
+@require_POST
+def template_version_restore(request, pk, version_pk):
+    from apps.email.models import EmailTemplate, EmailTemplateVersion
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+    version = get_object_or_404(EmailTemplateVersion, pk=version_pk, template=template)
+
+    # Snapshot the current state before overwriting so restoring is itself
+    # undoable, consistent with how template_edit snapshots before every save.
+    EmailTemplateVersion.objects.create(
+        template=template,
+        subject=template.subject,
+        text_body=template.text_body,
+        html_body=template.html_body,
+        content_blocks=template.content_blocks,
+        created_by=request.user if request.user.is_authenticated else None,
+    )
+
+    template.subject = version.subject
+    template.text_body = version.text_body
+    template.html_body = version.html_body
+    template.content_blocks = version.content_blocks
+    template.save(update_fields=["subject", "text_body", "html_body", "content_blocks", "updated_at"])
+
+    messages.success(request, "Version restored.")
+    mode = request.POST.get("mode") or template.builder_mode
+    return redirect(f"/email/templates/{template.pk}/?mode={mode}")
+
+
+@login_required
+@require_POST
+def template_clone(request, pk):
+    from django.utils.text import slugify
+
+    from apps.billing.limits import LimitChecker
+    from apps.email.models import EmailTemplate
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    if not admin and not LimitChecker(account).has_feature("email_templates"):
+        messages.error(request, "Your plan does not include email templates. Upgrade to enable them.")
+        return redirect("email-templates")
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+
+    base_slug = slugify(f"{template.slug}-copy")
+    slug = base_slug
+    counter = 2
+    while EmailTemplate.objects.filter(account=template.account, slug=slug).exists():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
+    EmailTemplate.objects.create(
+        account=template.account,
+        name=f"{template.name} (copy)",
+        slug=slug,
+        subject=template.subject,
+        text_body=template.text_body,
+        html_body=template.html_body,
+        content_blocks=template.content_blocks,
+        builder_mode=template.builder_mode,
+        sample_variables=template.sample_variables,
+    )
+    messages.success(request, "Template duplicated.")
     return redirect("email-templates")
 
 
@@ -983,8 +1149,10 @@ def template_delete(request, pk):
 
 @login_required
 def template_preview(request, pk):
+    from types import SimpleNamespace
+
     from apps.email.models import EmailTemplate
-    from apps.email.services import render_template
+    from apps.email.services import render_template, validate_variables
 
     admin = _is_admin(request)
     account = get_current_account(request)
@@ -992,12 +1160,117 @@ def template_preview(request, pk):
         return JsonResponse({"error": "Not found"}, status=404)
 
     template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
-    try:
-        variables = json.loads(request.GET.get("variables") or "{}")
-    except json.JSONDecodeError:
-        variables = template.sample_variables
-    subject, text_body, html_body = render_template(template, variables or template.sample_variables)
-    return JsonResponse({"subject": subject, "text": text_body, "html": html_body})
+
+    if request.method == "POST":
+        # Draft preview: render unsaved in-editor content (not the saved DB
+        # state) so the live-preview pane reflects what the user is typing.
+        try:
+            payload = json.loads(request.body or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        draft = SimpleNamespace(
+            subject=payload.get("subject", template.subject),
+            text_body=payload.get("text_body", template.text_body),
+            html_body=payload.get("html_body", template.html_body),
+        )
+        variables = payload.get("variables") or template.sample_variables
+        subject, text_body, html_body = render_template(draft, variables)
+        missing_variables = validate_variables(draft, variables)
+    else:
+        try:
+            variables = json.loads(request.GET.get("variables") or "{}")
+        except json.JSONDecodeError:
+            variables = template.sample_variables
+        variables = variables or template.sample_variables
+        subject, text_body, html_body = render_template(template, variables)
+        missing_variables = validate_variables(template, variables)
+
+    return JsonResponse({
+        "subject": subject,
+        "text": text_body,
+        "html": html_body,
+        "missing_variables": missing_variables,
+    })
+
+
+@login_required
+@require_POST
+def template_asset_upload(request):
+    """Image upload endpoint for the GrapesJS builder's asset manager.
+
+    Matches GrapesJS's default upload contract: accepts multipart files under
+    the `files` field, returns JSON `{"data": [<url>, ...]}` on success.
+    """
+    from apps.billing.limits import LimitChecker
+    from apps.email.models import EmailTemplateAsset
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if not admin and not LimitChecker(account).has_feature("email_templates"):
+        return JsonResponse({"error": "Your plan does not include email templates."}, status=403)
+
+    uploaded = request.FILES.getlist("files") or request.FILES.getlist("file")
+    if not uploaded:
+        return JsonResponse({"error": "No file provided."}, status=400)
+
+    urls = []
+    for f in uploaded:
+        try:
+            from PIL import Image
+
+            f.seek(0)
+            Image.open(f).verify()
+            f.seek(0)
+        except Exception:
+            return JsonResponse({"error": f"{f.name} is not a valid image."}, status=400)
+
+        asset = EmailTemplateAsset.objects.create(account=account, file=f)
+        urls.append(asset.file.url)
+
+    return JsonResponse({"data": urls})
+
+
+@login_required
+def asset_library(request):
+    """Browse/search uploaded template images."""
+    from apps.email.models import EmailTemplateAsset
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    assets = _scoped(EmailTemplateAsset.objects, request, account)
+    query = (request.GET.get("q") or "").strip()
+    if query:
+        assets = assets.filter(file__icontains=query)
+
+    return render(request, "email/assets.html", {
+        "account": account,
+        "is_admin": admin,
+        "assets": assets,
+        "query": query,
+    })
+
+
+@login_required
+@require_POST
+def asset_delete(request, pk):
+    from apps.email.models import EmailTemplateAsset
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    asset = get_object_or_404(_scoped(EmailTemplateAsset.objects, request, account), pk=pk)
+    asset.file.delete(save=False)
+    asset.delete()
+    messages.success(request, "Image deleted.")
+    return redirect("email-assets")
 
 
 # --- Bulk campaigns ---------------------------------------------------------

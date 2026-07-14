@@ -5,8 +5,12 @@ from apps.email.models import (
     EmailApiKey,
     EmailDomain,
     EmailMessage,
+    EmailTemplate,
+    EmailTemplateAsset,
+    EmailTemplateVersion,
     Mailbox,
     ProvisioningJob,
+    SystemEmailTemplate,
 )
 
 
@@ -44,6 +48,44 @@ class EmailMessageAdmin(admin.ModelAdmin):
     search_fields = ("to_email", "from_email", "subject", "account__company_name")
     raw_id_fields = ("account", "domain")
     readonly_fields = ("created_at", "sent_at", "provider_message_id", "error")
+
+
+class EmailTemplateVersionInline(admin.TabularInline):
+    model = EmailTemplateVersion
+    extra = 0
+    fields = ("created_at", "created_by", "subject")
+    readonly_fields = ("created_at", "created_by", "subject")
+    can_delete = False
+    max_num = 0
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "account", "builder_mode", "is_active", "updated_at")
+    list_filter = ("is_active", "builder_mode")
+    search_fields = ("name", "slug", "account__company_name")
+    raw_id_fields = ("account",)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = [EmailTemplateVersionInline]
+
+
+@admin.register(SystemEmailTemplate)
+class SystemEmailTemplateAdmin(admin.ModelAdmin):
+    list_display = ("key", "name", "is_active", "updated_at")
+    list_filter = ("is_active",)
+    search_fields = ("key", "name", "subject")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(EmailTemplateAsset)
+class EmailTemplateAssetAdmin(admin.ModelAdmin):
+    list_display = ("file", "account", "uploaded_at")
+    search_fields = ("account__company_name",)
+    raw_id_fields = ("account",)
+    readonly_fields = ("uploaded_at",)
 
 
 @admin.register(ProvisioningJob)

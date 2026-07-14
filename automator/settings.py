@@ -234,6 +234,11 @@ STALWART_API_KEY = os.getenv("STALWART_API_KEY", "")
 # Provider selector — swap the implementation without touching business logic.
 MAIL_PROVIDER_BACKEND = os.getenv("MAIL_PROVIDER_BACKEND", "stalwart")
 
+# Outbound message send-provider selector (apps.email.providers.get_send_provider).
+# "smtp" (default) delivers through the self-hosted relay above; set to a
+# dotted import path to plug in SendGrid/Mailgun/SES/Resend/etc. later.
+EMAIL_SEND_PROVIDER_BACKEND = os.getenv("EMAIL_SEND_PROVIDER_BACKEND", "smtp")
+
 # Public domain used to build absolute tracking URLs in outgoing emails.
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", (ALLOWED_HOSTS[0] if ALLOWED_HOSTS else "localhost"))
 

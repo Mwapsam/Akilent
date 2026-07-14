@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ template.name }} — {{ site.app_name|default:"Automator" }}{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Edit template</h1>
+    <p class="text-sm text-gray-500 mt-1">{{ template.name }} &middot; <code>{{ template.slug }}</code></p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <button id="editor-undo" type="button" class="btn btn-secondary btn-sm" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>Undo</button>
+    <button id="editor-redo" type="button" class="btn btn-secondary btn-sm" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>Redo</button>
+    <span id="email-builder-status" class="text-xs text-gray-400 min-w-[5.5rem]" role="status" aria-live="polite"></span>
+    <a href="?mode=raw" class="btn btn-sm {% if mode == 'raw' %}btn-primary{% else %}btn-secondary{% endif %}">Raw HTML</a>
+    <a href="?mode=blocks" class="btn btn-sm {% if mode == 'blocks' %}btn-primary{% else %}btn-secondary{% endif %}">Drag-and-drop</a>
+    <a href="/email/templates/assets/" class="btn btn-secondary btn-sm">Media library</a>
+    <button id="email-builder-save" type="submit" form="raw-editor-form" class="btn btn-primary btn-sm">
+      {% include "components/icon.html" with name="check" class="w-4 h-4" %} Save changes
+    </button>
+    <a href="/email/templates/" class="btn btn-secondary btn-sm">
+      {% include "components/icon.html" with name="arrow-left" class="w-4 h-4" %} Back to templates
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="template-editor-config" data-config='{{ builder_config }}' hidden></div>
+{% include "email/_template_settings.html" %}
+
+<div id="editor-split" class="grid grid-cols-1 lg:grid-cols-[1fr_10px_1fr] gap-4 lg:gap-0 items-stretch mb-6">
+  <div id="editor-pane" class="card card-pad flex flex-col min-h-[65vh]">
+    {% if mode == 'blocks' %}
+    <div id="email-builder" class="flex-1" data-config='{{ builder_config }}'></div>
+    {% else %}
+    <form id="raw-editor-form" method="post" action="/email/templates/{{ template.pk }}/edit/"
+          class="flex flex-col gap-3 flex-1" data-config='{{ builder_config }}'>
+      {% csrf_token %}
+      <input type="hidden" name="builder_mode" value="raw">
+      <div>
+        <label class="label" for="tpl-text-body">Text body</label>
+        <textarea id="tpl-text-body" name="text_body" rows="6" class="input font-mono text-sm"
+                  data-merge-tags='{{ merge_tag_paths_json }}'>{{ template.text_body }}</textarea>
+      </div>
+      <div class="flex flex-col flex-1">
+        <label class="label" for="tpl-html-body">HTML body</label>
+        <textarea id="tpl-html-body" name="html_body" class="input font-mono text-sm flex-1 min-h-[20rem]"
+                  data-merge-tags='{{ merge_tag_paths_json }}'>{{ template.html_body }}</textarea>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div id="split-gutter" class="split-gutter" role="separator" aria-orientation="vertical"
+       aria-label="Resize editor and preview panes" tabindex="0"></div>
+
+  <div id="preview-pane" class="card card-pad flex flex-col min-h-[65vh]"
+       x-data="{ fullscreen: false, device: 'desktop' }"
+       :class="{ 'preview-fullscreen': fullscreen }"
+       :role="fullscreen ? 'dialog' : 'region'"
+       :aria-modal="fullscreen ? 'true' : 'false'"
+       aria-label="Email preview"
+       x-trap.noscroll="fullscreen"
+       @keydown.escape.window="fullscreen = false">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <h2 class="font-semibold">Preview</h2>
+      <div class="flex items-center gap-2">
+        <div class="inline-flex rounded-lg border border-border-strong p-0.5" role="group" aria-label="Preview device width">
+          <button type="button" class="btn btn-sm" :class="device === 'desktop' ? 'btn-primary' : 'btn-ghost'"
+                  @click="device = 'desktop'" :aria-pressed="device === 'desktop'">Desktop</button>
+          <button type="button" class="btn btn-sm" :class="device === 'tablet' ? 'btn-primary' : 'btn-ghost'"
+                  @click="device = 'tablet'" :aria-pressed="device === 'tablet'">Tablet</button>
+          <button type="button" class="btn btn-sm" :class="device === 'mobile' ? 'btn-primary' : 'btn-ghost'"
+                  @click="device = 'mobile'" :aria-pressed="device === 'mobile'">Mobile</button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" @click="fullscreen = !fullscreen"
+                :aria-pressed="fullscreen" aria-label="Toggle full screen preview">
+          <span x-text="fullscreen ? 'Exit full screen' : 'Full screen'"></span>
+        </button>
+      </div>
+    </div>
+    <p id="email-builder-preview-warnings" class="text-xs text-amber-600 mb-2 hidden" role="status" aria-live="polite"></p>
+    <div class="device-frame flex-1" :data-device="device">
+      <iframe id="email-builder-preview-frame" class="w-full h-full min-h-[55vh] border border-gray-200 rounded-lg bg-white"
+              title="Email preview" sandbox="allow-same-origin"></iframe>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/merge-tag-autocomplete.js"></script>
+<script src="/static/js/sample-variables-editor.js"></script>
+<script src="/static/js/template-preview.js"></script>
+{% if mode == 'blocks' %}
+<link rel="stylesheet" href="/static/js/vendor/grapesjs/grapes.min.css">
+<script src="/static/js/vendor/grapesjs/grapes.min.js"></script>
+<script src="/static/js/vendor/grapesjs/grapesjs-preset-newsletter.min.js"></script>
+<script src="/static/js/email-builder.js"></script>
+{% else %}
+<script src="/static/js/raw-editor.js"></script>
+{% endif %}
+<script src="/static/js/draft-autosave.js"></script>
+
+{% if template.versions.all %}
+<div class="card card-pad">
+  <h2 class="font-semibold mb-3">Version history</h2>
+  <div class="grid gap-2">
+    {% for v in template.versions.all %}
+    <div class="text-sm text-gray-600 flex items-center justify-between gap-3 border-b border-gray-100 py-2 last:border-0">
+      <span class="truncate">{{ v.subject|default:"(no subject)" }}</span>
+      <span class="flex items-center gap-2 shrink-0">
+        <span class="text-xs text-gray-400">{{ v.created_at|date:"M j, H:i" }}</span>
+        <form method="post" action="/email/templates/{{ template.pk }}/versions/{{ v.pk }}/restore/"
+              onsubmit="return confirm('Restore this version? Your current content will be saved as a new version first.');">
+          {% csrf_token %}
+          <input type="hidden" name="mode" value="{{ mode }}">
+          <button class="btn btn-secondary btn-sm" type="submit"
+                  aria-label="Restore version from {{ v.created_at|date:'M j, H:i' }}">Restore</button>
+        </form>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

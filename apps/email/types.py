@@ -117,3 +117,27 @@ class OperationResult:
     success: bool
     message: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OutboundEmail:
+    """A single fully-rendered message ready to hand to a send provider.
+
+    Rendering (merge tags, tracking pixel/link rewriting) happens before this
+    is constructed — send providers only ever see final content.
+    """
+
+    from_email: str
+    to_email: str
+    subject: str
+    text_body: str = ""
+    html_body: str = ""
+
+
+@dataclass(frozen=True)
+class SendResult:
+    """Normalized result of handing an OutboundEmail to a send provider."""
+
+    success: bool
+    provider_message_id: str = ""
+    error: str = ""

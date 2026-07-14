@@ -441,6 +441,10 @@ class EmailTemplate(models.Model):
     data, so tenant-authored templates can't reach app internals.
     """
 
+    class BuilderMode(models.TextChoices):
+        RAW = "raw", "Raw HTML"
+        BLOCKS = "blocks", "Drag-and-drop"
+
     account = models.ForeignKey(
         "accounts.Account", on_delete=models.CASCADE, related_name="email_templates"
     )
@@ -450,6 +454,15 @@ class EmailTemplate(models.Model):
     subject = models.CharField(max_length=998, blank=True, default="")
     text_body = models.TextField(blank=True, default="")
     html_body = models.TextField(blank=True, default="")
+
+    # GrapesJS project data (block tree) for templates edited via the
+    # drag-and-drop builder. html_body/text_body remain the compiled output
+    # that render.py/send.py actually consume — this field is the editable
+    # source, not read by the render/send pipeline.
+    content_blocks = models.JSONField(default=dict, blank=True)
+    builder_mode = models.CharField(
+        max_length=10, choices=BuilderMode.choices, default=BuilderMode.RAW
+    )
 
     # Example variables used by the dashboard preview/test-render.
     sample_variables = models.JSONField(default=dict, blank=True)
@@ -464,6 +477,79 @@ class EmailTemplate(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.account})"
+
+
+class SystemEmailTemplate(models.Model):
+    """A platform-owned (non-tenant) transactional/system email template.
+
+    Unlike EmailTemplate (tenant-owned, FK'd to Account), these are internal
+    emails the app sends about itself (invites, verification, admin alerts)
+    and have no tenant owner — identified by a unique `key` instead of
+    (account, slug). Rendered through the same sandboxed engine as
+    EmailTemplate (apps.email.services.render), which is duck-typed on
+    .subject/.text_body/.html_body rather than tied to EmailTemplate.
+
+    If no active row exists for a given key, callers fall back to the
+    original file-based template — see apps.email.services.system_templates.
+    """
+
+    key = models.SlugField(max_length=100, unique=True)
+    name = models.CharField(max_length=150)
+
+    subject = models.CharField(max_length=998, blank=True, default="")
+    text_body = models.TextField(blank=True, default="")
+    html_body = models.TextField(blank=True, default="")
+
+    sample_variables = models.JSONField(default=dict, blank=True)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["key"]
+
+    def __str__(self):
+        return f"{self.name} ({self.key})"
+
+
+class EmailTemplateVersion(models.Model):
+    """Snapshot of an EmailTemplate's content taken just before an edit overwrites it."""
+
+    template = models.ForeignKey(
+        EmailTemplate, on_delete=models.CASCADE, related_name="versions"
+    )
+    subject = models.CharField(max_length=998, blank=True, default="")
+    text_body = models.TextField(blank=True, default="")
+    html_body = models.TextField(blank=True, default="")
+    content_blocks = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.template.name} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class EmailTemplateAsset(models.Model):
+    """An image uploaded for use inside the drag-and-drop template builder."""
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="email_template_assets"
+    )
+    file = models.ImageField(upload_to="email_assets/%Y/%m/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return self.file.name
 
 
 class BulkEmailCampaign(models.Model):

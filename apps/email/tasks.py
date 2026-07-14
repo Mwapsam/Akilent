@@ -32,8 +32,9 @@ from apps.email.models import (
     ProvisioningJob,
     WebhookDelivery,
 )
-from apps.email.providers import get_mail_provider
-from apps.email.services import MailboxService, render_template, smtp_send
+from apps.email.providers import get_mail_provider, get_send_provider
+from apps.email.services import MailboxService, render_template, validate_variables
+from apps.email.types import OutboundEmail
 from apps.email.webhooks import EVENT_HEADER, SIGNATURE_HEADER, build_signature_header
 
 logger = logging.getLogger(__name__)
@@ -290,14 +291,14 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
             logger.debug("_send_email_message: tracking injection skipped: %s", exc)
 
     try:
-        message_id = smtp_send(
+        result = get_send_provider().send(OutboundEmail(
             from_email=msg.from_email,
             to_email=msg.to_email,
             subject=msg.subject,
             text_body=text_body,
             html_body=html_body,
-        )
-        msg.mark_sent(message_id)
+        ))
+        msg.mark_sent(result.provider_message_id)
         if msg.campaign_id:
             msg.campaign.increment_counts(sent=1)
             BulkEmailRecipient.objects.filter(message=msg).update(
@@ -400,6 +401,12 @@ def send_bulk_recipient_email(self, email_message_id: int) -> None:
 
     campaign = msg.campaign
     if msg.template_id:
+        missing = validate_variables(msg.template, variables)
+        if missing:
+            logger.warning(
+                "send_bulk_recipient_email: template %s missing variables %s for recipient %s",
+                msg.template_id, missing, msg.to_email,
+            )
         subject, text_body, html_body = render_template(msg.template, variables)
     else:
         from apps.email.services import render_string

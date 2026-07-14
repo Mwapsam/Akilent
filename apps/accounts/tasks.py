@@ -3,7 +3,6 @@ import logging
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
-from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,8 @@ def send_verification_email(self, user_id: int, site_name: str, link: str) -> No
     """
     from django.contrib.auth.models import User
 
+    from apps.email.services.system_templates import render_system_email
+
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
@@ -33,8 +34,12 @@ def send_verification_email(self, user_id: int, site_name: str, link: str) -> No
         return
 
     ctx = {"user": user, "site_name": site_name, "link": link}
-    subject = render_to_string("accounts/verify_email_subject.txt", ctx).strip()
-    body = render_to_string("accounts/verify_email.txt", ctx)
+    subject, body = render_system_email(
+        "accounts.verify",
+        ctx,
+        fallback_subject_template="accounts/verify_email_subject.txt",
+        fallback_body_template="accounts/verify_email.txt",
+    )
     try:
         send_mail(
             subject,

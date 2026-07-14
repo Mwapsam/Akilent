@@ -11,7 +11,7 @@ from django.utils.text import slugify
 from apps.billing.limits import LimitChecker
 from apps.email.exceptions import UnverifiedDomainError
 from apps.email.models import BulkEmailCampaign, EmailDomain, EmailMessage, EmailTemplate
-from apps.email.services import render_template
+from apps.email.services import render_template, validate_variables
 from apps.email.services.bulk import create_campaign
 from apps.email.tasks import send_email
 
@@ -21,6 +21,8 @@ __all__ = [
     "create_and_queue_message",
     "create_template",
     "update_template",
+    "clone_template",
+    "render_template_preview",
     "create_and_queue_campaign",
 ]
 
@@ -101,6 +103,8 @@ def create_template(
     text_body: str = "",
     html_body: str = "",
     sample_variables: dict | None = None,
+    content_blocks: dict | None = None,
+    builder_mode: str = "raw",
 ) -> EmailTemplate:
     lc = LimitChecker(account)
     lc.require_feature("email_templates", "email templates")
@@ -112,6 +116,8 @@ def create_template(
         text_body=text_body,
         html_body=html_body,
         sample_variables=sample_variables or {},
+        content_blocks=content_blocks or {},
+        builder_mode=builder_mode,
     )
 
 
@@ -122,6 +128,8 @@ def update_template(*, template: EmailTemplate, **fields) -> EmailTemplate:
         "text": "text_body",
         "html": "html_body",
         "sample_variables": "sample_variables",
+        "content_blocks": "content_blocks",
+        "builder_mode": "builder_mode",
     }
     updated = []
     for key, model_field in field_map.items():
@@ -131,6 +139,41 @@ def update_template(*, template: EmailTemplate, **fields) -> EmailTemplate:
     if updated:
         template.save(update_fields=updated)
     return template
+
+
+def clone_template(*, template: EmailTemplate) -> EmailTemplate:
+    lc = LimitChecker(template.account)
+    lc.require_feature("email_templates", "email templates")
+
+    base_slug = slugify(f"{template.slug}-copy")
+    slug = base_slug
+    counter = 2
+    while EmailTemplate.objects.filter(account=template.account, slug=slug).exists():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
+    return EmailTemplate.objects.create(
+        account=template.account,
+        name=f"{template.name} (copy)",
+        slug=slug,
+        subject=template.subject,
+        text_body=template.text_body,
+        html_body=template.html_body,
+        content_blocks=template.content_blocks,
+        builder_mode=template.builder_mode,
+        sample_variables=template.sample_variables,
+    )
+
+
+def render_template_preview(*, template: EmailTemplate, variables: dict | None = None) -> dict:
+    variables = variables or template.sample_variables
+    subject, text_body, html_body = render_template(template, variables)
+    return {
+        "subject": subject,
+        "text": text_body,
+        "html": html_body,
+        "missing_variables": validate_variables(template, variables),
+    }
 
 
 def create_and_queue_campaign(

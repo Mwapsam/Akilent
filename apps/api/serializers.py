@@ -43,6 +43,8 @@ class TemplateSerializer(serializers.Serializer):
     text = serializers.CharField(required=False, allow_blank=True, default="")
     html = serializers.CharField(required=False, allow_blank=True, default="")
     sample_variables = serializers.DictField(required=False, default=dict)
+    content_blocks = serializers.DictField(required=False, default=dict)
+    builder_mode = serializers.ChoiceField(choices=["raw", "blocks"], required=False, default="raw")
 
     @staticmethod
     def from_request_data(data: dict) -> dict:
@@ -53,6 +55,8 @@ class TemplateSerializer(serializers.Serializer):
             "text": data.get("text", ""),
             "html": data.get("html", ""),
             "sample_variables": data.get("sample_variables", {}),
+            "content_blocks": data.get("content_blocks", {}),
+            "builder_mode": data.get("builder_mode", "raw"),
         }
 
 

@@ -255,4 +255,27 @@
     @apply flex-1 font-mono text-xs bg-surface-muted border border-border
       rounded-lg px-3 py-2 break-all;
   }
+
+  /* Template builder split-screen editor --------------------------------- */
+  .split-gutter {
+    @apply hidden lg:flex items-center justify-center w-2.5 shrink-0
+      cursor-col-resize rounded-full transition-colors;
+  }
+  .split-gutter::before {
+    content: "";
+    @apply w-0.5 h-10 rounded-full bg-border-strong;
+  }
+  .split-gutter:hover::before,
+  .split-gutter.is-dragging::before {
+    @apply bg-brand-400;
+  }
+  .device-frame {
+    @apply mx-auto w-full transition-[max-width] duration-200;
+  }
+  .device-frame[data-device="tablet"] { max-width: 768px; }
+  .device-frame[data-device="mobile"] { max-width: 375px; }
+  .preview-fullscreen {
+    @apply fixed inset-0 m-0 rounded-none border-0 shadow-none bg-surface;
+    z-index: var(--z-modal);
+  }
 }

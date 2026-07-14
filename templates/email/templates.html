@@ -7,9 +7,14 @@
     <h1 class="text-2xl font-semibold tracking-tight">Email templates</h1>
     <p class="text-sm text-gray-500 mt-1">Reusable subject/body content with &#123;&#123; variable &#125;&#125; interpolation, usable in single sends and bulk campaigns.</p>
   </div>
-  <a href="/email/campaigns/" class="btn btn-secondary btn-sm">
-    {% include "components/icon.html" with name="chat" class="w-4 h-4" %} Campaigns
-  </a>
+  <div class="flex items-center gap-2">
+    <a href="/email/templates/assets/" class="btn btn-secondary btn-sm">
+      {% include "components/icon.html" with name="image" class="w-4 h-4" %} Media library
+    </a>
+    <a href="/email/campaigns/" class="btn btn-secondary btn-sm">
+      {% include "components/icon.html" with name="chat" class="w-4 h-4" %} Campaigns
+    </a>
+  </div>
 </div>
 {% endblock %}
 
@@ -67,10 +72,17 @@
         <p class="text-sm text-gray-600 mt-1 truncate">{{ t.subject }}</p>
         <p class="text-xs text-gray-400 mt-1">Updated {{ t.updated_at|date:"M j, H:i" }}</p>
       </div>
-      <form method="post" action="/email/templates/{{ t.pk }}/delete/" onsubmit="return confirm('Delete this template?');">
-        {% csrf_token %}
-        <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
-      </form>
+      <div class="flex items-center gap-2">
+        <a href="/email/templates/{{ t.pk }}/" class="btn btn-secondary btn-sm">Edit</a>
+        <form method="post" action="/email/templates/{{ t.pk }}/clone/">
+          {% csrf_token %}
+          <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
+        </form>
+        <form method="post" action="/email/templates/{{ t.pk }}/delete/" onsubmit="return confirm('Delete this template?');">
+          {% csrf_token %}
+          <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
+        </form>
+      </div>
     </div>
   </div>
   {% empty %}
