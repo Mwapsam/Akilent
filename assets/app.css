@@ -278,4 +278,24 @@
     @apply fixed inset-0 m-0 rounded-none border-0 shadow-none bg-surface;
     z-index: var(--z-modal);
   }
+
+  /* Code sample tabs (API integration snippets) -------------------------- */
+  .code-tabs { @apply bg-ink rounded-xl overflow-hidden; }
+  .code-tabs .tab-bar {
+    @apply flex items-stretch gap-1 px-2 pt-1.5 border-b border-white/10 overflow-x-auto;
+  }
+  .code-tabs .tab-bar button[data-tab] {
+    @apply font-mono text-xs text-gray-400 px-3 py-2.5 rounded-t-lg whitespace-nowrap shrink-0
+      transition-colors hover:text-white;
+  }
+  .code-tabs .tab-bar button[data-tab].active {
+    @apply text-white bg-white/5;
+    box-shadow: inset 0 -2px 0 var(--color-amber-400);
+  }
+  .code-tabs pre { @apply m-0 rounded-none p-4 text-xs text-gray-100 overflow-x-auto; }
+  .copy-btn {
+    @apply inline-flex items-center justify-center gap-1 ml-auto self-center
+      text-gray-400 hover:text-white rounded-lg px-2 py-1.5 text-xs font-mono transition-colors;
+  }
+  .copy-btn.copied { @apply text-teal-400; }
 }

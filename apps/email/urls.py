@@ -38,6 +38,7 @@ urlpatterns = [
     path("templates/<int:pk>/clone/", views.template_clone, name="email-template-clone"),
     path("templates/<int:pk>/delete/", views.template_delete, name="email-template-delete"),
     path("templates/<int:pk>/preview/", views.template_preview, name="email-template-preview"),
+    path("templates/<int:pk>/send-test/", views.template_send_test, name="email-template-send-test"),
     path("templates/assets/upload/", views.template_asset_upload, name="email-template-asset-upload"),
     path("templates/assets/", views.asset_library, name="email-assets"),
     path("templates/assets/<int:pk>/delete/", views.asset_delete, name="email-asset-delete"),

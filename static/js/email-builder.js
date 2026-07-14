@@ -160,6 +160,31 @@
       },
     });
 
+    // Group preset-newsletter's flat block list into named categories —
+    // must run after grapesjs.init() resolves, since the plugin registers
+    // its own blocks during its own init and a pre-init blockManager.blocks
+    // override would race it.
+    var BLOCK_CATEGORIES = {
+      sect100: "Layout",
+      sect50: "Layout",
+      sect30: "Layout",
+      sect37: "Layout",
+      text: "Content",
+      "text-sect": "Content",
+      quote: "Content",
+      image: "Content",
+      button: "Content",
+      link: "Content",
+      "link-block": "Content",
+      divider: "Content",
+      "grid-items": "Content",
+      "list-items": "Content",
+    };
+    editor.BlockManager.getAll().forEach(function (block) {
+      var category = BLOCK_CATEGORIES[block.get("id")];
+      if (category) block.set("category", category);
+    });
+
     if (config.projectData && Object.keys(config.projectData).length) {
       editor.loadProjectData(config.projectData);
     } else if (config.html) {
@@ -245,6 +270,18 @@
 
     // Initial paint so the preview pane isn't blank before the first edit.
     refreshPreview();
+
+    // Shared draft shape with window.RawEditor.buildDraft() (raw-editor.js)
+    // so callers like send-test.js don't need to branch on mode themselves.
+    editor.getDraft = function () {
+      var html = currentHtml();
+      return {
+        subject: currentSubject(),
+        text_body: stripTags(html),
+        html_body: html,
+        variables: readSampleVariables(config),
+      };
+    };
 
     window.EmailBuilderEditor = editor;
     return editor;

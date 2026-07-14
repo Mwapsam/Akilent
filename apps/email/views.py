@@ -902,7 +902,9 @@ def templates_list(request):
         return redirect("dashboard")
 
     templates_enabled = admin or (account and LimitChecker(account).has_feature("email_templates"))
-    templates = _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
+    templates = list(_scoped(EmailTemplate.objects, request, account).filter(is_active=True))
+    for t in templates:
+        t.sample_variables_json = json.dumps(t.sample_variables or {})
 
     starters = [
         {
@@ -981,6 +983,7 @@ def template_edit_form(request, pk):
         "mergeTags": merge_tag_paths,
         "saveUrl": f"/email/templates/{template.pk}/edit/",
         "previewUrl": f"/email/templates/{template.pk}/preview/",
+        "sendTestUrl": f"/email/templates/{template.pk}/send-test/",
         "uploadUrl": "/email/templates/assets/upload/",
         "csrfToken": get_token(request),
         "name": template.name,
@@ -1203,6 +1206,74 @@ def template_preview(request, pk):
         "html": html_body,
         "missing_variables": missing_variables,
     })
+
+
+@login_required
+@require_POST
+def template_send_test(request, pk):
+    """Send the current draft to the logged-in user's own address.
+
+    to_email is always request.user.email — never client-supplied — so this
+    can't become an open spam relay. Reuses create_and_queue_message
+    (apps.api.services) for the actual send, but without template_id so it
+    sends the pre-rendered draft as-is rather than re-rendering the saved
+    template from the DB.
+    """
+    from types import SimpleNamespace
+
+    from django.core.cache import cache
+
+    from apps.api.services import create_and_queue_message
+    from apps.billing.limits import PlanLimitExceeded
+    from apps.email.exceptions import UnverifiedDomainError
+    from apps.email.models import EmailDomain, EmailTemplate
+    from apps.email.services import render_template
+
+    account = get_current_account(request)
+    if account is None:
+        return JsonResponse({"error": "Select an account first."}, status=400)
+
+    template = get_object_or_404(_scoped(EmailTemplate.objects, request, account), pk=pk)
+
+    if not request.user.email:
+        return JsonResponse({"error": "Your account has no email address to send a test to."}, status=400)
+
+    cooldown_key = f"send_test_cooldown:{request.user.id}:{template.pk}"
+    if cache.get(cooldown_key):
+        return JsonResponse({"error": "Please wait a few seconds before sending another test."}, status=429)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    draft = SimpleNamespace(
+        subject=payload.get("subject", template.subject),
+        text_body=payload.get("text_body", template.text_body),
+        html_body=payload.get("html_body", template.html_body),
+    )
+    variables = payload.get("variables") or template.sample_variables
+    subject, text_body, html_body = render_template(draft, variables)
+
+    domain = EmailDomain.objects.filter(account=account, status=EmailDomain.Status.VERIFIED).first()
+    if domain is None:
+        return JsonResponse({"error": "Verify a sending domain first."}, status=400)
+
+    try:
+        create_and_queue_message(
+            account=account,
+            from_email=f"test@{domain.domain}",
+            to_email=request.user.email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+    except UnverifiedDomainError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    except PlanLimitExceeded as e:
+        return JsonResponse({"error": str(e)}, status=403)
+
+    cache.set(cooldown_key, True, timeout=30)
+    return JsonResponse({"status": "queued"}, status=202)
 
 
 @login_required

@@ -70,35 +70,112 @@
 <script src="/static/js/template-starter-picker.js"></script>
 
 {# Templates list #}
-<div class="grid gap-3 mb-8">
-  {% for t in templates %}
-  <div class="card card-pad">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <p class="font-medium text-gray-900">{{ t.name }}</p>
-        <p class="text-xs text-gray-500 mt-1">Slug: <code>{{ t.slug }}</code></p>
-        <p class="text-sm text-gray-600 mt-1 truncate">{{ t.subject }}</p>
-        <p class="text-xs text-gray-400 mt-1">Updated {{ t.updated_at|date:"M j, H:i" }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <a href="/email/templates/{{ t.pk }}/" class="btn btn-secondary btn-sm">Edit</a>
-        <form method="post" action="/email/templates/{{ t.pk }}/clone/">
-          {% csrf_token %}
-          <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
-        </form>
-        <form method="post" action="/email/templates/{{ t.pk }}/delete/" onsubmit="return confirm('Delete this template?');">
-          {% csrf_token %}
-          <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
-        </form>
-      </div>
-    </div>
-  </div>
-  {% empty %}
-  <div class="card">
-    {% include "components/empty_state.html" with icon="book-open" title="No templates yet" message="Create one above to reuse it across single sends and bulk campaigns." %}
-  </div>
-  {% endfor %}
+{% if templates %}
+<div class="table-wrap mb-8">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Template name</th>
+        <th>Type</th>
+        <th>Last updated</th>
+        <th class="text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in templates %}
+      <tr>
+        <td>
+          <a href="/email/templates/{{ t.pk }}/" class="font-medium text-brand-600 hover:text-brand-700">{{ t.name }}</a>
+        </td>
+        <td class="text-gray-600">{% if t.builder_mode == 'blocks' %}Drag &amp; Drop{% else %}Raw HTML{% endif %}</td>
+        <td class="text-gray-500">{{ t.updated_at|date:"M j, H:i" }}</td>
+        <td>
+          <div class="flex items-center gap-1 justify-end">
+            <button type="button" class="btn-ghost rounded-lg p-2" title="Preview" aria-label="Preview {{ t.name }}"
+                    @click="$dispatch('open-preview-modal', { url: '/email/templates/{{ t.pk }}/preview/', name: '{{ t.name|escapejs }}' })">
+              {% include "components/icon.html" with name="eye" class="w-4 h-4" %}
+            </button>
+            <button type="button" class="btn-ghost rounded-lg p-2" title="Send via API" aria-label="Send {{ t.name }} via API"
+                    @click="$dispatch('open-api-modal', { id: {{ t.pk }}, name: '{{ t.name|escapejs }}' })">
+              {% include "components/icon.html" with name="code-bracket" class="w-4 h-4" %}
+            </button>
+            <form method="post" action="/email/templates/{{ t.pk }}/clone/" class="inline">
+              {% csrf_token %}
+              <button class="btn-ghost rounded-lg p-2" type="submit" title="Duplicate" aria-label="Duplicate {{ t.name }}">
+                {% include "components/icon.html" with name="copy" class="w-4 h-4" %}
+              </button>
+            </form>
+            <form method="post" action="/email/templates/{{ t.pk }}/delete/" onsubmit="return confirm('Delete this template?');" class="inline">
+              {% csrf_token %}
+              <button class="btn-ghost rounded-lg p-2 hover:text-red-600" type="submit" title="Delete" aria-label="Delete {{ t.name }}">
+                {% include "components/icon.html" with name="trash" class="w-4 h-4" %}
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
+
+{# Hidden per-template code samples, cloned into the API modal on demand. #}
+{% for t in templates %}
+<template id="api-code-{{ t.pk }}">
+  <div class="code-tabs">
+    <div class="tab-bar" role="tablist">
+      <button type="button" data-tab="curl" class="active" role="tab">cURL</button>
+      <button type="button" data-tab="python" role="tab">Python</button>
+      <button type="button" data-tab="node" role="tab">Node.js</button>
+    </div>
+    <pre data-panel="curl"><code>curl --location --request POST \
+  '{{ request.scheme }}://{{ request.get_host }}/api/v1/messages' \
+  --header 'X-Api-Key: &lt;YOUR_API_KEY&gt;' \
+  --header 'Content-Type: application/json' \
+  --data-raw '{
+    "template_id": {{ t.pk }},
+    "template_variables": {{ t.sample_variables_json }},
+    "from": "you@yourdomain.com",
+    "to": "recipient@example.com"
+}'</code></pre>
+    <pre data-panel="python" hidden><code>import requests
+
+requests.post(
+    "{{ request.scheme }}://{{ request.get_host }}/api/v1/messages",
+    headers={"X-Api-Key": "&lt;YOUR_API_KEY&gt;"},
+    json={
+        "template_id": {{ t.pk }},
+        "template_variables": {{ t.sample_variables_json }},
+        "from": "you@yourdomain.com",
+        "to": "recipient@example.com",
+    },
+)</code></pre>
+    <pre data-panel="node" hidden><code>await fetch("{{ request.scheme }}://{{ request.get_host }}/api/v1/messages", {
+  method: "POST",
+  headers: {
+    "X-Api-Key": "&lt;YOUR_API_KEY&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    template_id: {{ t.pk }},
+    template_variables: {{ t.sample_variables_json }},
+    from: "you@yourdomain.com",
+    to: "recipient@example.com",
+  }),
+});</code></pre>
+  </div>
+</template>
+{% endfor %}
+
+{% include "email/_api_code_modal.html" %}
+{% include "email/_preview_modal.html" %}
+<script src="/static/js/code-tabs.js"></script>
+
+{% else %}
+<div class="card mb-8">
+  {% include "components/empty_state.html" with icon="book-open" title="No templates yet" message="Create one above to reuse it across single sends and bulk campaigns." %}
+</div>
+{% endif %}
 
 {% endif %}
 {% endblock %}

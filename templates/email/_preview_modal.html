@@ -1,0 +1,38 @@
+{% comment %}
+Single global quick-preview modal, shared by every row in the templates
+table (see templates.html). Each row's Preview button dispatches an
+`open-preview-modal` window event carrying that template's preview URL; this
+modal fetches it (the existing GET template_preview endpoint, unchanged) and
+writes the rendered HTML into an iframe — no need to open the full editor.
+{% endcomment %}
+<div x-data="{ open: false, title: '' }" x-show="open" x-cloak
+     class="fixed inset-0 flex items-center justify-center p-4" style="z-index: var(--z-modal)"
+     @keydown.escape.window="open = false"
+     @open-preview-modal.window="
+       open = true;
+       title = $event.detail.name;
+       fetch($event.detail.url)
+         .then(r => r.json())
+         .then(data => {
+           var frame = document.getElementById('quick-preview-frame');
+           var doc = frame.contentDocument || frame.contentWindow.document;
+           doc.open(); doc.write(data.html || ''); doc.close();
+         });
+     "
+     role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+  <div class="absolute inset-0 bg-gray-900/40" @click="open = false"></div>
+  <div class="card shadow-modal w-full max-w-2xl relative flex flex-col" style="max-height: 85vh;"
+       x-transition.scale.95.opacity x-trap.noscroll="open">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+      <div>
+        <h2 id="preview-modal-title" class="text-base font-semibold text-gray-900">Preview</h2>
+        <p class="text-xs text-gray-500 mt-0.5" x-text="title"></p>
+      </div>
+      <button type="button" class="btn-ghost rounded-lg p-1.5" @click="open = false" aria-label="Close">
+        {% include "components/icon.html" with name="x" class="w-5 h-5" %}
+      </button>
+    </div>
+    <iframe id="quick-preview-frame" class="w-full flex-1 border-0" style="min-height: 60vh;"
+            title="Template preview" sandbox="allow-same-origin"></iframe>
+  </div>
+</div>

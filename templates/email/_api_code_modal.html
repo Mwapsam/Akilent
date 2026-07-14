@@ -1,0 +1,44 @@
+{% comment %}
+Single global "Send via API" modal, shared by every row in the templates
+table (see templates.html) rather than one modal per row. Each row's action
+button dispatches an `open-api-modal` window event carrying the target
+template's id; this modal clones that template's `#api-code-{id}` <template>
+tag (rendered server-side with the real template id/sample_variables baked
+in, see templates.html) into #api-code-modal-content.
+{% endcomment %}
+<div x-data="{ open: false, title: '' }" x-show="open" x-cloak
+     class="fixed inset-0 flex items-center justify-center p-4" style="z-index: var(--z-modal)"
+     @keydown.escape.window="open = false"
+     @open-api-modal.window="
+       open = true;
+       title = $event.detail.name;
+       $nextTick(() => {
+         var tpl = document.getElementById('api-code-' + $event.detail.id);
+         var target = document.getElementById('api-code-modal-content');
+         target.innerHTML = '';
+         if (tpl) target.appendChild(tpl.content.cloneNode(true));
+         if (window.CodeTabs) window.CodeTabs.init(target);
+       })
+     "
+     role="dialog" aria-modal="true" aria-labelledby="api-modal-title">
+  <div class="absolute inset-0 bg-gray-900/40" @click="open = false"></div>
+  <div class="card shadow-modal w-full max-w-2xl relative" x-transition.scale.95.opacity x-trap.noscroll="open">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div>
+        <h2 id="api-modal-title" class="text-base font-semibold text-gray-900">Send via API</h2>
+        <p class="text-xs text-gray-500 mt-0.5" x-text="title"></p>
+      </div>
+      <button type="button" class="btn-ghost rounded-lg p-1.5" @click="open = false" aria-label="Close">
+        {% include "components/icon.html" with name="x" class="w-5 h-5" %}
+      </button>
+    </div>
+    <div class="p-6">
+      <p class="text-sm text-gray-500 mb-4">
+        POST to <code class="copy-value">/api/v1/messages</code> with an
+        <code class="copy-value">X-Api-Key</code> header. Get an API key from
+        <a href="/email/domains/" class="text-brand-600 font-medium">Domains</a>.
+      </p>
+      <div id="api-code-modal-content"></div>
+    </div>
+  </div>
+</div>

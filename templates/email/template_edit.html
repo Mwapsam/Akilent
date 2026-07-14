@@ -10,6 +10,7 @@
   <div class="flex flex-wrap items-center gap-2">
     <button id="editor-undo" type="button" class="btn btn-secondary btn-sm" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>Undo</button>
     <button id="editor-redo" type="button" class="btn btn-secondary btn-sm" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>Redo</button>
+    <button id="template-send-test" type="button" class="btn btn-secondary btn-sm">Send Test</button>
     <span id="email-builder-status" class="text-xs text-gray-400 min-w-[5.5rem]" role="status" aria-live="polite"></span>
     <a href="?mode=raw" class="btn btn-sm {% if mode == 'raw' %}btn-primary{% else %}btn-secondary{% endif %}">Raw HTML</a>
     <a href="?mode=blocks" class="btn btn-sm {% if mode == 'blocks' %}btn-primary{% else %}btn-secondary{% endif %}">Drag-and-drop</a>
@@ -99,6 +100,7 @@
 <script src="/static/js/raw-editor.js"></script>
 {% endif %}
 <script src="/static/js/draft-autosave.js"></script>
+<script src="/static/js/send-test.js"></script>
 
 {% if template.versions.all %}
 <div class="card card-pad">
