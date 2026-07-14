@@ -200,12 +200,32 @@
           if (statusEl) {
             statusEl.textContent = res.ok ? "Saved." : "Save failed.";
           }
+          if (!res.ok && window.toast) {
+            window.toast("danger", "Save failed (" + res.status + "). Your changes are still in the editor — try again.");
+          }
           return res;
         })
         .catch(function () {
           if (statusEl) statusEl.textContent = "Save failed.";
+          if (window.toast) {
+            window.toast("danger", "Save failed — check your connection and try again.");
+          }
         });
     }
+
+    // GrapesJS's asset manager only console.error()s on a failed upload by
+    // default (invalid image, plan limit, etc.) — surface it to the user via
+    // the app's toast system instead of leaving it silent.
+    editor.on("asset:upload:error", function (errText) {
+      var message = "Image upload failed.";
+      try {
+        var parsed = typeof errText === "string" ? JSON.parse(errText) : errText;
+        if (parsed && parsed.error) message = parsed.error;
+      } catch (e) {
+        if (typeof errText === "string" && errText) message = errText;
+      }
+      if (window.toast) window.toast("danger", message);
+    });
 
     var refreshPreview = window.TemplatePreview.debounce(function () {
       window.TemplatePreview.refresh(config.previewUrl, config.csrfToken, {

@@ -103,6 +103,11 @@
       body: JSON.stringify(draft),
     })
       .then(function (res) {
+        if (!res.ok) {
+          var err = new Error("Preview request failed (" + res.status + ")");
+          err.status = res.status;
+          throw err;
+        }
         return res.json();
       })
       .then(function (data) {
@@ -121,8 +126,15 @@
           }
         }
       })
-      .catch(function () {
-        // Network/parse errors leave the last-good preview on screen.
+      .catch(function (err) {
+        // Leave the last-good preview on screen (don't blank it), but tell
+        // the user it's stale instead of failing silently.
+        if (thisRequest !== requestId) return;
+        if (previewWarnings) {
+          previewWarnings.textContent =
+            "Preview couldn't be refreshed" + (err && err.status ? " (" + err.status + ")" : "") + " — showing the last successful preview.";
+          previewWarnings.classList.remove("hidden");
+        }
       })
       .finally(function () {
         if (thisRequest === requestId) {

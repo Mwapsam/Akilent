@@ -38,6 +38,12 @@
 {# Create template #}
 <div class="card card-pad mb-6">
   <h2 class="font-semibold mb-4">New template</h2>
+
+  <div class="mb-4" id="starter-template-picker" data-starters='{{ starter_templates_json }}'>
+    <p class="text-xs font-medium text-gray-500 mb-1.5">Start from a sample</p>
+    <div class="flex flex-wrap gap-2" id="starter-template-buttons"></div>
+  </div>
+
   <form method="post" action="/email/templates/create/" class="grid gap-3">
     {% csrf_token %}
     <div class="grid sm:grid-cols-2 gap-3">
@@ -47,11 +53,11 @@
     {% include "components/form_field.html" with name="subject" label="Subject" placeholder="Welcome, &#123;&#123; first_name &#125;&#125;!" required=True %}
     <div>
       <label class="text-xs font-medium text-gray-500 mb-1.5 block">Text body</label>
-      <textarea name="text_body" rows="4" class="input font-mono text-sm" placeholder="Hi &#123;&#123; first_name &#125;&#125;, thanks for joining."></textarea>
+      <textarea id="id_text_body" name="text_body" rows="4" class="input font-mono text-sm" placeholder="Hi &#123;&#123; first_name &#125;&#125;, thanks for joining."></textarea>
     </div>
     <div>
       <label class="text-xs font-medium text-gray-500 mb-1.5 block">HTML body</label>
-      <textarea name="html_body" rows="6" class="input font-mono text-sm" placeholder="&lt;p&gt;Hi &#123;&#123; first_name &#125;&#125;, thanks for joining.&lt;/p&gt;"></textarea>
+      <textarea id="id_html_body" name="html_body" rows="6" class="input font-mono text-sm" placeholder="&lt;p&gt;Hi &#123;&#123; first_name &#125;&#125;, thanks for joining.&lt;/p&gt;"></textarea>
     </div>
     <div>
       <button class="btn btn-primary" type="submit">
@@ -60,6 +66,8 @@
     </div>
   </form>
 </div>
+
+<script src="/static/js/template-starter-picker.js"></script>
 
 {# Templates list #}
 <div class="grid gap-3 mb-8">

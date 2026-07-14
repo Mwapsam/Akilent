@@ -894,6 +894,7 @@ def api_send(request):
 def templates_list(request):
     from apps.billing.limits import LimitChecker
     from apps.email.models import EmailTemplate
+    from apps.email.starter_templates import STARTER_TEMPLATES
 
     admin = _is_admin(request)
     account = get_current_account(request)
@@ -903,11 +904,22 @@ def templates_list(request):
     templates_enabled = admin or (account and LimitChecker(account).has_feature("email_templates"))
     templates = _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
 
+    starters = [
+        {
+            "name": s["name"],
+            "subject": s["subject"],
+            "text_body": s["text_body"],
+            "html_body": s["html_body"],
+        }
+        for s in STARTER_TEMPLATES
+    ]
+
     return render(request, "email/templates.html", {
         "account": account,
         "is_admin": admin,
         "templates": templates,
         "templates_enabled": templates_enabled,
+        "starter_templates_json": json.dumps(starters),
     })
 
 
@@ -1199,7 +1211,10 @@ def template_asset_upload(request):
     """Image upload endpoint for the GrapesJS builder's asset manager.
 
     Matches GrapesJS's default upload contract: accepts multipart files under
-    the `files` field, returns JSON `{"data": [<url>, ...]}` on success.
+    the `files` field, returns JSON `{"data": [<url>, ...]}` on success. The
+    asset manager's default `multiUpload: true` appends a `[]` suffix to the
+    field name (`multiUploadSuffix`), so the actual field GrapesJS posts to is
+    `files[]`, not `files` — check that first.
     """
     from apps.billing.limits import LimitChecker
     from apps.email.models import EmailTemplateAsset
@@ -1212,7 +1227,11 @@ def template_asset_upload(request):
     if not admin and not LimitChecker(account).has_feature("email_templates"):
         return JsonResponse({"error": "Your plan does not include email templates."}, status=403)
 
-    uploaded = request.FILES.getlist("files") or request.FILES.getlist("file")
+    uploaded = (
+        request.FILES.getlist("files[]")
+        or request.FILES.getlist("files")
+        or request.FILES.getlist("file")
+    )
     if not uploaded:
         return JsonResponse({"error": "No file provided."}, status=400)
 
