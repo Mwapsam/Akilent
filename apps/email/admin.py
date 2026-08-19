@@ -9,6 +9,7 @@ from apps.email.models import (
     EmailTemplateAsset,
     EmailTemplateVersion,
     ProvisioningJob,
+    SmtpCredential,
     SystemEmailTemplate,
 )
 
@@ -29,6 +30,15 @@ class EmailApiKeyAdmin(admin.ModelAdmin):
     search_fields = ("account__company_name", "key")
     raw_id_fields = ("account",)
     readonly_fields = ("key", "created_at", "last_used_at")
+
+
+@admin.register(SmtpCredential)
+class SmtpCredentialAdmin(admin.ModelAdmin):
+    list_display = ("username", "account", "domain", "is_active", "created_at")
+    list_filter = ("is_active", "created_at")
+    search_fields = ("username", "account__company_name", "domain__domain")
+    raw_id_fields = ("account", "domain")
+    readonly_fields = ("created_at", "last_used_at")
 
 
 @admin.register(EmailMessage)

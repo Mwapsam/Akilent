@@ -338,24 +338,15 @@ class EmailApiKey(models.Model):
 class SmtpCredential(models.Model):
     """A per-domain SMTP AUTH identity for direct SMTP relay.
 
-    This is the "SMTP relay" half of the Developer Platform, distinct from
-    the HTTP `POST /api/v1/messages` path — customers who want to send via
-    SMTP directly authenticate with one of these instead of a mailbox
-    password. Provisioned as a dedicated mail-server account (not a real
-    inbox), scoped to one verified domain so a leaked credential can't be
-    used to send as a different domain the same account also owns.
-
-    Unlike EmailApiKey, Django never authenticates SMTP connections itself —
-    the mail server validates SMTP AUTH directly. secret_hash/last4 exist
-    only for local display/audit ("does a credential exist, what's its
-    last4"), not as an auth check performed by this application.
+    No longer provisioned on the mail server. Instead, credentials are validated
+    locally and messages are delivered via SES (or other send provider).
     """
 
     account = models.ForeignKey(
         "accounts.Account", on_delete=models.CASCADE, related_name="smtp_credentials"
     )
     domain = models.ForeignKey(
-        "EmailDomain", on_delete=models.CASCADE, related_name="smtp_credentials"
+        EmailDomain, on_delete=models.CASCADE, related_name="smtp_credentials"
     )
     username = models.EmailField(unique=True)
     is_active = models.BooleanField(default=True)

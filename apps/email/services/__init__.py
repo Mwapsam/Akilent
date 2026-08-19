@@ -1,10 +1,10 @@
 """Email services package.
 
-Business logic that views and Celery tasks call — never the provider directly.
+Business logic that views and Celery tasks call.
 
-Provisioning services (DomainService) orchestrate:
+Provisioning services (DomainService, SmtpCredentialService) orchestrate:
   - Plan limit enforcement
-  - Provider calls
+  - Provider calls (domain provisioning)
   - Django ORM sync
   - Audit log writes
 

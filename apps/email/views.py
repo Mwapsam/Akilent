@@ -290,8 +290,7 @@ def key_create(request):
     messages.success(request, "New API key generated — copy it now, it won't be shown again.")
     return redirect("email-domains")
 
-
-# --- SMTP relay credentials -----------------------------------------------------
+# --- SMTP relay credentials (now SES-backed) -----------------------------------
 
 def _require_email_apis(request, account) -> bool:
     if _is_admin(request):
@@ -321,7 +320,7 @@ def smtp_create(request, pk):
 
     try:
         credential, secret = SmtpCredentialService(domain.account, actor=request.user).provision(domain)
-    except MailProviderError as exc:
+    except Exception as exc:
         messages.error(request, f"Could not create SMTP relay credential: {exc}")
         return redirect("email-domains")
 
@@ -341,7 +340,7 @@ def smtp_rotate(request, pk):
     credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
     try:
         secret = SmtpCredentialService(credential.account, actor=request.user).rotate(credential)
-    except MailProviderError as exc:
+    except Exception as exc:
         messages.error(request, f"Could not rotate SMTP relay credential: {exc}")
         return redirect("email-domains")
 
@@ -361,7 +360,7 @@ def smtp_revoke(request, pk):
     credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
     try:
         SmtpCredentialService(credential.account, actor=request.user).revoke(credential)
-    except MailProviderError as exc:
+    except Exception as exc:
         messages.error(request, f"Could not revoke SMTP relay credential: {exc}")
         return redirect("email-domains")
 
