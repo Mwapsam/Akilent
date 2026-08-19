@@ -1,8 +1,10 @@
 from django.urls import path
 
-from apps.email import views
+from apps.email import views, ses_webhooks
 
 urlpatterns = [
+    # SNS webhook for SES bounce/complaint notifications
+    path("webhooks/ses/", ses_webhooks.ses_sns_webhook, name="ses-sns-webhook"),
     path("domains/", views.domains_list, name="email-domains"),
     path("domains/create/", views.domain_create, name="email-domain-create"),
     path("domains/<int:pk>/verify/", views.domain_verify, name="email-domain-verify"),

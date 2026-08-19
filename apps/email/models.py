@@ -820,3 +820,52 @@ class EmailTrackingEvent(models.Model):
 
     def __str__(self):
         return f"{self.kind} on message {self.message_id} at {self.occurred_at}"
+
+
+class SuppressionListEntry(models.Model):
+    """Email addresses suppressed from sending due to bounces, complaints, or unsubscribes.
+
+    Used for SES compliance and deliverability best practices. Checked before every send
+    to prevent bouncing to known-bad addresses or sending to unsubscribed recipients.
+    """
+
+    class Reason(models.TextChoices):
+        BOUNCE = "bounce", "Hard Bounce"
+        COMPLAINT = "complaint", "Complaint (Abuse Report)"
+        UNSUBSCRIBE = "unsubscribe", "Unsubscribed"
+        MANUAL = "manual", "Manually Suppressed"
+
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="email_suppressions"
+    )
+    email = models.EmailField()
+    reason = models.CharField(max_length=20, choices=Reason.choices, default=Reason.BOUNCE)
+
+    # For auditing: which message triggered the suppression (if any)
+    triggered_by_message = models.ForeignKey(
+        EmailMessage,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="suppression_entries",
+    )
+
+    # SNS bounce/complaint metadata (if from SES)
+    bounce_type = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="SES bounce type: Permanent, Transient, or Undetermined"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["account", "email"]),
+            models.Index(fields=["account", "reason"]),
+        ]
+        # Prevent duplicate suppressions per email per account
+        unique_together = ["account", "email"]
+
+    def __str__(self):
+        return f"{self.email} ({self.get_reason_display()})"

@@ -66,42 +66,6 @@ class LimitChecker:
                 "automation_rules",
             )
 
-    def check_mailbox(self):
-        plan = self._require_active_plan()
-        if plan.max_mailboxes == -1:
-            return
-        from apps.email.models import Mailbox
-        count = Mailbox.objects.filter(account=self.account).exclude(
-            status=Mailbox.Status.FAILED
-        ).count()
-        if count >= plan.max_mailboxes:
-            raise PlanLimitExceeded(
-                f"Mailbox limit of {plan.max_mailboxes} reached. "
-                "Upgrade your plan to add more mailboxes.",
-                "mailboxes",
-            )
-
-    def check_alias(self):
-        plan = self._require_active_plan()
-        # Aliases and forwarding rules are the same EmailAlias object here.
-        if plan.max_aliases == -1:
-            return
-        from apps.email.models import EmailAlias
-        count = EmailAlias.objects.filter(account=self.account).count()
-        if count >= plan.max_aliases:
-            raise PlanLimitExceeded(
-                f"Alias limit of {plan.max_aliases} reached. "
-                "Upgrade your plan to add more aliases.",
-                "aliases",
-            )
-
-    def mailbox_storage_cap_mb(self):
-        """Per-mailbox storage cap (MB) for the plan, or None if no cap/plan."""
-        if not self.subscription or not self.subscription.is_active:
-            return None
-        gb = getattr(self.subscription.plan, "mailbox_storage_gb", 0) or 0
-        return gb * 1024 if gb > 0 else None
-
     def has_feature(self, name: str) -> bool:
         """Whether the active plan includes a boolean capability."""
         if not self.subscription or not self.subscription.is_active:

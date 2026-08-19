@@ -1,17 +1,17 @@
-"""Celery tasks for email provisioning and maintenance.
+﻿"""Celery tasks for email provisioning and maintenance.
 
 All heavy provider calls are handled here rather than in Django views, so HTTP
 requests return immediately and retries happen transparently.
 
 Queues:
-  email      — mailbox/domain/alias provisioning tasks
-  outbound   — send_email, send_bulk_recipient_email
-  campaigns  — dispatch_campaign
-  webhooks   — deliver_webhook
-  celery     — prune_* maintenance tasks
+  email      â€” mailbox/domain/alias provisioning tasks
+  outbound   â€” send_email, send_bulk_recipient_email
+  campaigns  â€” dispatch_campaign
+  webhooks   â€” deliver_webhook
+  celery     â€” prune_* maintenance tasks
 
 ProvisioningJob is created by the caller before dispatching the task, then
-updated here as the task runs (PENDING → RUNNING → SUCCESS | FAILED | RETRYING).
+updated here as the task runs (PENDING â†’ RUNNING â†’ SUCCESS | FAILED | RETRYING).
 """
 from __future__ import annotations
 
@@ -47,184 +47,7 @@ _WEBHOOK_TIMEOUT_SECONDS = 10
 _CAMPAIGN_CHUNK_SIZE = 500
 
 
-# ── Mailbox provisioning ──────────────────────────────────────────────────────
-
-
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="email",
-)
-def provision_mailbox_async(
-    self, mailbox_id: int, password: str, job_id: int | None = None
-) -> None:
-    """Create a mailbox on the mail server and record the outcome.
-
-    The password is passed as a task arg (preserved across retries) and is
-    never persisted to the Mailbox row or ProvisioningJob.
-    """
-    job = _get_job(job_id)
-    if job:
-        job.celery_task_id = self.request.id or ""
-        job.mark_running()
-
-    try:
-        mb = Mailbox.objects.select_related("account").get(pk=mailbox_id)
-    except Mailbox.DoesNotExist:
-        logger.error("provision_mailbox_async: Mailbox %s not found", mailbox_id)
-        if job:
-            job.mark_failed("Mailbox record not found.")
-        return
-
-    if mb.status == Mailbox.Status.ACTIVE:
-        if job:
-            job.mark_success()
-        return
-
-    try:
-        MailboxService(mb.account).provision(mb, password)
-        if job:
-            job.mark_success()
-    except EmailProviderError as exc:
-        is_last = self.request.retries >= _MAX_RETRIES
-        mb.status = Mailbox.Status.FAILED
-        mb.error = str(exc)[:5000]
-        mb.save(update_fields=["status", "error"])
-        if job:
-            job.mark_failed(str(exc), retrying=not is_last)
-        logger.error(
-            "provision_mailbox_async: failed for %s (attempt %d/%d): %s",
-            mb.email,
-            self.request.retries + 1,
-            _MAX_RETRIES,
-            exc,
-        )
-        raise self.retry(exc=exc)
-
-
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="email",
-)
-def deprovision_mailbox_async(
-    self, email: str, job_id: int | None = None
-) -> None:
-    """Delete a mailbox from the mail server."""
-    job = _get_job(job_id)
-    if job:
-        job.celery_task_id = self.request.id or ""
-        job.mark_running()
-
-    try:
-        get_mail_provider().delete_mailbox(email)
-        if job:
-            job.mark_success()
-    except EmailProviderError as exc:
-        is_last = self.request.retries >= _MAX_RETRIES
-        if job:
-            job.mark_failed(str(exc), retrying=not is_last)
-        logger.error("deprovision_mailbox_async: failed for %s: %s", email, exc)
-        raise self.retry(exc=exc)
-
-
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="email",
-)
-def change_password_async(
-    self, email: str, new_password: str, job_id: int | None = None
-) -> None:
-    """Change a mailbox password asynchronously."""
-    job = _get_job(job_id)
-    if job:
-        job.celery_task_id = self.request.id or ""
-        job.mark_running()
-
-    try:
-        get_mail_provider().change_password(email, new_password)
-        if job:
-            job.mark_success()
-    except EmailProviderError as exc:
-        is_last = self.request.retries >= _MAX_RETRIES
-        if job:
-            job.mark_failed(str(exc), retrying=not is_last)
-        raise self.retry(exc=exc)
-
-
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="email",
-)
-def set_quota_async(
-    self,
-    email: str,
-    quota_mb: int,
-    mailbox_id: int | None = None,
-    job_id: int | None = None,
-) -> None:
-    """Update mailbox storage quota asynchronously."""
-    job = _get_job(job_id)
-    if job:
-        job.celery_task_id = self.request.id or ""
-        job.mark_running()
-
-    try:
-        get_mail_provider().set_quota(email, quota_mb)
-        if mailbox_id:
-            Mailbox.objects.filter(pk=mailbox_id).update(quota_mb=quota_mb)
-        if job:
-            job.mark_success()
-    except EmailProviderError as exc:
-        is_last = self.request.retries >= _MAX_RETRIES
-        if job:
-            job.mark_failed(str(exc), retrying=not is_last)
-        raise self.retry(exc=exc)
-
-
-@shared_task(
-    bind=True,
-    max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
-    queue="email",
-)
-def rotate_dkim_async(
-    self,
-    domain: str,
-    domain_record_id: int,
-    new_selector: str,
-    job_id: int | None = None,
-) -> None:
-    """Generate a new DKIM keypair under new_selector and update the EmailDomain row."""
-    from apps.email.models import EmailDomain
-
-    job = _get_job(job_id)
-    if job:
-        job.celery_task_id = self.request.id or ""
-        job.mark_running()
-
-    try:
-        rec = get_mail_provider().rotate_dkim(domain, new_selector=new_selector)
-        EmailDomain.objects.filter(pk=domain_record_id).update(
-            dkim_public_key=rec.public_key_txt,
-            dkim_selector=rec.selector,
-        )
-        if job:
-            job.mark_success()
-    except EmailProviderError as exc:
-        is_last = self.request.retries >= _MAX_RETRIES
-        if job:
-            job.mark_failed(str(exc), retrying=not is_last)
-        raise self.retry(exc=exc)
-
-
-# ── Domain provisioning ───────────────────────────────────────────────────────
+# â”€â”€ Domain provisioning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @shared_task(
@@ -265,7 +88,7 @@ def provision_domain_async(
         raise self.retry(exc=exc)
 
 
-# ── Email sending ─────────────────────────────────────────────────────────────
+# â”€â”€ Email sending â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str) -> None:
@@ -332,7 +155,7 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
 def _maybe_complete_campaign(campaign: BulkEmailCampaign) -> None:
     """Mark a campaign COMPLETED once no recipients are PENDING/QUEUED.
 
-    Called after each recipient's terminal send outcome — dispatch_campaign
+    Called after each recipient's terminal send outcome â€” dispatch_campaign
     only re-enqueues itself while PENDING rows remain, so the final
     QUEUED -> SENT/FAILED transitions (which happen asynchronously, after the
     last chunk was dispatched) are what actually close out the campaign.
@@ -378,7 +201,7 @@ def send_email(
 def send_bulk_recipient_email(self, email_message_id: int) -> None:
     """Render the EmailMessage's template/recipient variables, then send.
 
-    Same retry/tracking/quota-release behavior as send_email — the only
+    Same retry/tracking/quota-release behavior as send_email â€” the only
     difference is content is resolved from EmailMessage.template +
     BulkEmailRecipient.variables rather than passed in directly.
     """
@@ -427,7 +250,7 @@ def send_bulk_recipient_email(self, email_message_id: int) -> None:
     _send_email_message(self, msg, text_body, html_body)
 
 
-# ── Bulk campaign fan-out ─────────────────────────────────────────────────────
+# â”€â”€ Bulk campaign fan-out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @shared_task(
@@ -530,7 +353,7 @@ def dispatch_campaign(self, campaign_id: int) -> None:
         _maybe_complete_campaign(campaign)
 
 
-# ── Webhook delivery ──────────────────────────────────────────────────────────
+# â”€â”€ Webhook delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @shared_task(
@@ -586,7 +409,7 @@ def deliver_webhook(self, delivery_id: int) -> None:
         raise self.retry(exc=exc, countdown=countdown)
 
 
-# ── Maintenance ───────────────────────────────────────────────────────────────
+# â”€â”€ Maintenance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @shared_task(queue="celery")
@@ -640,12 +463,10 @@ def prune_provisioning_jobs() -> int:
     return deleted
 
 
-# ── Legacy alias ──────────────────────────────────────────────────────────────
-# Old beat schedule references provision_mailbox by name.
-provision_mailbox = provision_mailbox_async
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _get_job(job_id: int | None) -> ProvisioningJob | None:
@@ -656,3 +477,5 @@ def _get_job(job_id: int | None) -> ProvisioningJob | None:
     except ProvisioningJob.DoesNotExist:
         logger.warning("_get_job: ProvisioningJob %s not found", job_id)
         return None
+
+

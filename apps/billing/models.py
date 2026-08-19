@@ -26,10 +26,6 @@ class Plan(models.Model):
 
     max_conversations_per_month = models.IntegerField(default=100)
     max_emails_per_month = models.IntegerField(default=1000)
-    max_mailboxes = models.IntegerField(default=1)
-    mailbox_storage_gb = models.PositiveIntegerField(default=10)  # storage per mailbox
-    max_forwarding_rules = models.IntegerField(default=10)        # -1 = unlimited
-    max_aliases = models.IntegerField(default=10)                 # -1 = unlimited
     max_automation_rules = models.IntegerField(default=2)
     max_whatsapp_numbers = models.IntegerField(default=1)
 

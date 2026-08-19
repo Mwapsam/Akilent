@@ -70,6 +70,11 @@ def create_and_queue_message(
     lc.require_feature("email_apis", "the email API & SMTP relay")
     lc.check_email()
 
+    # Check suppression list (bounces, complaints, unsubscribes)
+    from apps.email.models import SuppressionListEntry
+    if SuppressionListEntry.objects.filter(account=account, email=to_email).exists():
+        raise UnverifiedDomainError(f"{to_email} is suppressed (bounce, complaint, or unsubscribe)")
+
     template = None
     if template_id is not None:
         template = EmailTemplate.objects.get(pk=template_id, account=account)

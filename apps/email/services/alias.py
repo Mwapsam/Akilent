@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 
 from apps.email.audit import record as audit
 from apps.email.exceptions import EmailProviderError
-from apps.email.models import EmailAlias
 from apps.email.providers import get_mail_provider
 from apps.email.types import AliasInfo, OperationResult
 
