@@ -109,3 +109,16 @@ A few things specific to your setup:
 This only works when FLUTTERWAVE_SECRET_KEY is the test key (FLWSECK_TEST-…). With a live key these cards are rejected.
 For the recurring flow you just built: the payment-plan enrollment + first charge use the same test cards. Auto-renewal charges are simulated by Flutterwave and arrive as charge.completed webhooks — to exercise that locally you'll need the webhook reachable (e.g. an ngrok tunnel pointed at /billing/webhook/ with FLUTTERWAVE_WEBHOOK_HASH set).
 One caveat: I can't fetch live docs here, and Flutterwave rotates these test values occasionally. If any card is rejected, grab the current list from developer.flutterwave.com → "Test cards" or your dashboard's test-mode docs. Want me to add a short "Testing payments" section to the README with these cards and the ngrok/webhook steps?
+
+
+
+curl --location --request POST \
+  'https://akilent.com/api/v1/messages' \
+  --header 'X-Api-Key: <YOUR_API_KEY>' \
+  --header 'Content-Type: application/json' \
+  --data-raw '{
+    "template_id": 1,
+    "template_variables": {},
+    "from": "you@yourdomain.com",
+    "to": "recipient@example.com"
+}'

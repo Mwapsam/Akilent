@@ -2,7 +2,7 @@
 
 Business logic that views and Celery tasks call — never the provider directly.
 
-Provisioning services (DomainService, MailboxService, AliasService) orchestrate:
+Provisioning services (DomainService) orchestrate:
   - Plan limit enforcement
   - Provider calls
   - Django ORM sync
@@ -11,9 +11,7 @@ Provisioning services (DomainService, MailboxService, AliasService) orchestrate:
 Sending helpers (smtp_send, apply_tracking) are exported here for backwards
 compatibility with existing tasks.py imports.
 """
-from .alias import AliasService
 from .domain import DomainService
-from .mailbox import MailboxService
 from .render import (
     find_variable_paths,
     find_variables,
@@ -27,8 +25,6 @@ from .smtp_credential import SmtpCredentialService
 
 __all__ = [
     "DomainService",
-    "MailboxService",
-    "AliasService",
     "SmtpCredentialService",
     "smtp_send",
     "apply_tracking",

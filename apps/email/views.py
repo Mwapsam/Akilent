@@ -15,20 +15,17 @@ from apps.accounts.models import Account
 from apps.accounts.utils import get_current_account
 from apps.email import dnscheck
 from apps.email.models import (
-    EmailAlias,
     EmailApiKey,
     EmailDomain,
     EmailMessage,
     EmailTrackingEvent,
     EmailTrackingToken,
-    Mailbox,
     SmtpCredential,
     WebhookDelivery,
     WebhookEndpoint,
 )
 from apps.email.providers import MailProviderError
-from apps.email.services import AliasService, DomainService, MailboxService, SmtpCredentialService
-from apps.email.tasks import provision_mailbox
+from apps.email.services import DomainService, SmtpCredentialService
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +69,6 @@ def _domain_card(request, record):
 
 
 _MSG_LEVEL = {"success": messages.SUCCESS, "warning": messages.WARNING, "danger": messages.ERROR}
-
-
-def _mailbox_row(request, mb):
-    return render(request, "email/_mailbox_row.html", {
-        "mb": mb, "is_admin": _is_admin(request),
-    })
 
 
 # --- Dashboard ----------------------------------------------------------------
@@ -534,231 +525,6 @@ def insights(request):
         "stats": stats,
         "error": error,
     })
-
-
-# --- Mailboxes & aliases ------------------------------------------------------
-
-@login_required
-def mailbox_list(request):
-    admin = _is_admin(request)
-    account = get_current_account(request)
-    if account is None and not admin:
-        return redirect("dashboard")
-
-    domains = _scoped(EmailDomain.objects, request, account).filter(
-        status=EmailDomain.Status.VERIFIED
-    )
-    mailboxes = _scoped(Mailbox.objects, request, account).select_related("domain")
-    aliases = _scoped(EmailAlias.objects, request, account).select_related("domain")
-    return render(request, "email/mailboxes.html", {
-        "account": account,
-        "is_admin": admin,
-        "domains": domains,
-        "mailboxes": mailboxes,
-        "aliases": aliases,
-    })
-
-
-@login_required
-@require_POST
-def mailbox_create(request):
-    admin = _is_admin(request)
-    current = get_current_account(request)
-    if current is None and not admin:
-        return redirect("dashboard")
-
-    ajax = is_ajax(request)
-    email = (request.POST.get("email") or "").strip().lower()
-    password = request.POST.get("password") or ""
-    name = (request.POST.get("name") or "").strip()
-    try:
-        quota_mb = int(request.POST.get("quota_mb") or 1024)
-    except ValueError:
-        quota_mb = 1024
-
-    def fail(msg):
-        if ajax:
-            return _ajax_error(msg)
-        messages.error(request, msg)
-        return redirect("email-mailboxes")
-
-    if not email or not password:
-        return fail("Email and password are required.")
-
-    domain_part = email.rsplit("@", 1)[-1]
-    domain = _scoped(EmailDomain.objects, request, current).filter(
-        domain=domain_part, status=EmailDomain.Status.VERIFIED
-    ).first()
-    if domain is None:
-        return fail(f"'{domain_part}' is not a verified sending domain.")
-
-    account = domain.account
-
-    if Mailbox.objects.filter(email=email).exists():
-        return fail("That mailbox already exists.")
-
-    note = ""
-    if not admin:
-        from apps.billing.limits import LimitChecker, PlanLimitExceeded
-        lc = LimitChecker(account)
-        try:
-            lc.check_mailbox()
-        except PlanLimitExceeded as exc:
-            return fail(str(exc))
-        cap = lc.mailbox_storage_cap_mb()
-        if cap and quota_mb > cap:
-            quota_mb = cap
-            note = f" (storage capped at {cap} MB by your plan)"
-
-    mb = Mailbox.objects.create(
-        account=account, domain=domain, email=email, name=name, quota_mb=quota_mb
-    )
-    transaction.on_commit(lambda: provision_mailbox.delay(mb.id, password))
-    msg = f"Provisioning {email}{note}…"
-    if ajax:
-        return _toast(_mailbox_row(request, mb), "success", msg)
-    messages.success(request, msg)
-    return redirect("email-mailboxes")
-
-
-@login_required
-@require_POST
-def mailbox_delete(request, pk):
-    admin = _is_admin(request)
-    account = get_current_account(request)
-    if account is None and not admin:
-        return redirect("dashboard")
-
-    mb = get_object_or_404(_scoped(Mailbox.objects, request, account), pk=pk)
-    ajax = is_ajax(request)
-    email = mb.email
-    try:
-        MailboxService(mb.account, actor=request.user).deprovision(mb)
-        mb.delete()
-    except MailProviderError as exc:
-        if ajax:
-            return _ajax_error(f"Delete failed: {exc}")
-        messages.error(request, f"Delete failed: {exc}")
-        return redirect("email-mailboxes")
-    if ajax:
-        return _toast(HttpResponse(""), "success", f"{email} deleted.")
-    messages.success(request, "Mailbox deleted.")
-    return redirect("email-mailboxes")
-
-
-@login_required
-@require_POST
-def mailbox_password(request, pk):
-    admin = _is_admin(request)
-    account = get_current_account(request)
-    if account is None and not admin:
-        return redirect("dashboard")
-
-    mb = get_object_or_404(_scoped(Mailbox.objects, request, account), pk=pk)
-    ajax = is_ajax(request)
-    password = request.POST.get("password") or ""
-    if not password:
-        if ajax:
-            return _ajax_error("Password is required.")
-        messages.error(request, "Password is required.")
-        return redirect("email-mailboxes")
-    try:
-        MailboxService(mb.account, actor=request.user).change_password(mb, password)
-    except MailProviderError as exc:
-        if ajax:
-            return _ajax_error(f"Password change failed: {exc}")
-        messages.error(request, f"Password change failed: {exc}")
-        return redirect("email-mailboxes")
-    if ajax:
-        return _toast(HttpResponse(""), "success", f"Password updated for {mb.email}.")
-    messages.success(request, f"Password updated for {mb.email}.")
-    return redirect("email-mailboxes")
-
-
-@login_required
-@require_POST
-def mailbox_quota(request, pk):
-    admin = _is_admin(request)
-    account = get_current_account(request)
-    if account is None and not admin:
-        return redirect("dashboard")
-
-    mb = get_object_or_404(_scoped(Mailbox.objects, request, account), pk=pk)
-    ajax = is_ajax(request)
-    try:
-        quota_mb = int(request.POST.get("quota_mb") or mb.quota_mb)
-    except ValueError:
-        if ajax:
-            return _ajax_error("Quota must be a number (MB).")
-        messages.error(request, "Quota must be a number (MB).")
-        return redirect("email-mailboxes")
-    note = ""
-    if not admin:
-        from apps.billing.limits import LimitChecker
-        cap = LimitChecker(mb.account).mailbox_storage_cap_mb()
-        if cap and quota_mb > cap:
-            quota_mb = cap
-            note = f" (capped at {cap} MB by plan)"
-    try:
-        MailboxService(mb.account, actor=request.user).set_quota(mb, quota_mb)
-    except MailProviderError as exc:
-        if ajax:
-            return _ajax_error(f"Quota update failed: {exc}")
-        messages.error(request, f"Quota update failed: {exc}")
-        return redirect("email-mailboxes")
-    if ajax:
-        return _toast(_mailbox_row(request, mb), "success", f"Quota updated for {mb.email}{note}.")
-    messages.success(request, f"Quota updated for {mb.email}{note}.")
-    return redirect("email-mailboxes")
-
-
-@login_required
-@require_POST
-def alias_create(request):
-    admin = _is_admin(request)
-    current = get_current_account(request)
-    if current is None and not admin:
-        return redirect("dashboard")
-
-    ajax = is_ajax(request)
-    address = (request.POST.get("address") or "").strip().lower()
-    goto = (request.POST.get("goto") or "").strip().lower()
-
-    def fail(msg):
-        if ajax:
-            return _ajax_error(msg)
-        messages.error(request, msg)
-        return redirect("email-mailboxes")
-
-    if not address or not goto:
-        return fail("Both the alias and forwarding address are required.")
-
-    domain_part = address.rsplit("@", 1)[-1]
-    domain = _scoped(EmailDomain.objects, request, current).filter(
-        domain=domain_part, status=EmailDomain.Status.VERIFIED
-    ).first()
-    if domain is None:
-        return fail(f"'{domain_part}' is not a verified sending domain.")
-
-    if not admin:
-        from apps.billing.limits import LimitChecker, PlanLimitExceeded
-        try:
-            LimitChecker(domain.account).check_alias()
-        except PlanLimitExceeded as exc:
-            return fail(str(exc))
-
-    alias = EmailAlias(account=domain.account, domain=domain, address=address, goto=goto)
-    try:
-        AliasService(domain.account, actor=request.user).provision(alias)
-    except MailProviderError as exc:
-        return fail(f"Alias creation failed: {exc}")
-    alias.save()
-
-    if ajax:
-        resp = render(request, "email/_alias_row.html", {"a": alias, "is_admin": admin})
-        return _toast(resp, "success", f"Alias {address} → {goto} created.")
-    messages.success(request, f"Alias {address} → {goto} created.")
-    return redirect("email-mailboxes")
 
 
 # --- Open / click tracking endpoints ------------------------------------------

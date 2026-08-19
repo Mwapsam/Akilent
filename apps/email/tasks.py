@@ -28,12 +28,11 @@ from apps.email.models import (
     BulkEmailCampaign,
     BulkEmailRecipient,
     EmailMessage,
-    Mailbox,
     ProvisioningJob,
     WebhookDelivery,
 )
 from apps.email.providers import get_mail_provider, get_send_provider
-from apps.email.services import MailboxService, render_template, validate_variables
+from apps.email.services import render_template, validate_variables
 from apps.email.types import OutboundEmail
 from apps.email.webhooks import EVENT_HEADER, SIGNATURE_HEADER, build_signature_header
 

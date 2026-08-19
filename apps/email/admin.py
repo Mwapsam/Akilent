@@ -8,7 +8,6 @@ from apps.email.models import (
     EmailTemplate,
     EmailTemplateAsset,
     EmailTemplateVersion,
-    Mailbox,
     ProvisioningJob,
     SystemEmailTemplate,
 )
@@ -30,15 +29,6 @@ class EmailApiKeyAdmin(admin.ModelAdmin):
     search_fields = ("account__company_name", "key")
     raw_id_fields = ("account",)
     readonly_fields = ("key", "created_at", "last_used_at")
-
-
-@admin.register(Mailbox)
-class MailboxAdmin(admin.ModelAdmin):
-    list_display = ("email", "account", "status", "quota_mb", "created_at")
-    list_filter = ("status",)
-    search_fields = ("email", "account__company_name")
-    raw_id_fields = ("account", "domain")
-    readonly_fields = ("created_at", "error")
 
 
 @admin.register(EmailMessage)

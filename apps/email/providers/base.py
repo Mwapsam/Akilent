@@ -15,12 +15,9 @@ from dataclasses import dataclass
 
 from apps.email.exceptions import EmailProviderError
 from apps.email.types import (
-    AliasInfo,
     DkimRecord,
     DomainInfo,
-    MailboxInfo,
     OperationResult,
-    QuotaInfo,
 )
 
 
@@ -138,123 +135,6 @@ class EmailProvider(ABC):
         The old selector remains valid during DNS propagation. Callers should
         schedule old-key deletion after confirming the new record is live in DNS.
         """
-
-    # ── Mailbox lifecycle ─────────────────────────────────────────────────
-
-    @abstractmethod
-    def create_mailbox(
-        self,
-        email: str,
-        password: str,
-        *,
-        name: str = "",
-        quota_mb: int | None = None,
-        description: str = "",
-    ) -> MailboxInfo:
-        """Provision a mailbox. The password is hashed by the server; Django never stores it."""
-
-    @abstractmethod
-    def get_mailbox(self, email: str) -> MailboxInfo:
-        """Fetch current metadata for an existing mailbox."""
-
-    @abstractmethod
-    def update_mailbox(
-        self,
-        email: str,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> MailboxInfo:
-        """Update mutable mailbox fields (excludes password and quota)."""
-
-    @abstractmethod
-    def delete_mailbox(self, email: str) -> OperationResult:
-        """Permanently remove a mailbox and all its stored mail."""
-
-    @abstractmethod
-    def list_mailboxes(self, domain: str) -> list[MailboxInfo]:
-        """Return all mailboxes for the given domain."""
-
-    @abstractmethod
-    def set_mailbox_active(self, email: str, *, active: bool) -> OperationResult:
-        """Suspend or reactivate a mailbox without deleting it."""
-
-    # ── Password management ───────────────────────────────────────────────
-
-    @abstractmethod
-    def change_password(self, email: str, new_password: str) -> OperationResult:
-        """Change a mailbox password. Plaintext is sent once; not retained by Django."""
-
-    # ── Quota management ──────────────────────────────────────────────────
-
-    @abstractmethod
-    def get_quota(self, email: str) -> QuotaInfo:
-        """Return current storage usage and limit for a mailbox."""
-
-    @abstractmethod
-    def set_quota(self, email: str, quota_mb: int) -> OperationResult:
-        """Update the storage quota for a mailbox (0 = unlimited)."""
-
-    # ── Alias lifecycle ───────────────────────────────────────────────────
-
-    @abstractmethod
-    def create_alias(
-        self,
-        address: str,
-        targets: list[str],
-        *,
-        description: str = "",
-    ) -> AliasInfo:
-        """Create a forwarding alias from ``address`` to one or more ``targets``."""
-
-    @abstractmethod
-    def get_alias(self, address: str) -> AliasInfo:
-        """Fetch the current target list for an alias."""
-
-    @abstractmethod
-    def update_alias(
-        self,
-        address: str,
-        targets: list[str],
-        *,
-        description: str | None = None,
-    ) -> AliasInfo:
-        """Replace the target list for an existing alias."""
-
-    @abstractmethod
-    def delete_alias(self, address: str) -> OperationResult:
-        """Remove a forwarding alias."""
-
-    @abstractmethod
-    def list_aliases(self, domain: str) -> list[AliasInfo]:
-        """Return all aliases in the given domain."""
-
-    # ── SMTP relay identity ───────────────────────────────────────────────
-    # A per-tenant SMTP AUTH identity is just a dedicated mailbox-like
-    # account under the tenant's domain — mail servers don't expose a
-    # distinct "API relay" primitive, so this is built entirely on the
-    # mailbox lifecycle above. Concrete (not abstract): any provider that
-    # implements create_mailbox/change_password/delete_mailbox gets SMTP
-    # relay identities for free, with no per-provider override needed.
-
-    def create_relay_identity(
-        self, email: str, password: str, *, description: str = ""
-    ) -> MailboxInfo:
-        """Provision a dedicated SMTP AUTH identity (not a real inbox) for API relay."""
-        return self.create_mailbox(
-            email,
-            password,
-            name="API relay",
-            description=description or "Akilent SMTP relay identity",
-        )
-
-    def rotate_relay_secret(self, email: str, new_password: str) -> OperationResult:
-        """Rotate the SMTP AUTH password for a relay identity."""
-        return self.change_password(email, new_password)
-
-    def delete_relay_identity(self, email: str) -> OperationResult:
-        """Permanently remove a relay identity."""
-        return self.delete_mailbox(email)
 
     # ── Legacy compatibility helpers ──────────────────────────────────────
     # Concrete implementations of the old 8-method interface so existing

@@ -232,3 +232,19 @@ class NullProvider(EmailProvider):
     def list_aliases(self, domain: str) -> list[AliasInfo]:
         logger.debug("NullProvider.list_aliases(%s)", domain)
         return []
+
+
+# ── Send provider (for message delivery) ──────────────────────────────────────
+
+
+class NullSendProvider:
+    """No-op send provider for local dev and CI.
+
+    All send operations succeed silently without actually delivering anything.
+    """
+
+    def send(self, message) -> "OperationResult":
+        """Silently succeed on any send request."""
+        from apps.email.types import SendResult
+        logger.debug("NullSendProvider.send() to %s (silently discarded)", message.to_email)
+        return SendResult(success=True, provider_message_id=f"null-{id(message)}")

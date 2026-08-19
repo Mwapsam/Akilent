@@ -371,67 +371,6 @@ class SmtpCredential(models.Model):
         return f"{self.username} ({'active' if self.is_active else 'revoked'})"
 
 
-class Mailbox(models.Model):
-    """A real mailbox provisioned on the iRedMail server for a tenant.
-
-    Mailboxes are a billable unit sold per subscription package. The account's
-    password is never stored here — it is passed to the mail provider at
-    provisioning time via the Celery task.
-    """
-
-    class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        ACTIVE = "active", "Active"
-        FAILED = "failed", "Failed"
-
-    account = models.ForeignKey(
-        "accounts.Account", on_delete=models.CASCADE, related_name="mailboxes"
-    )
-    domain = models.ForeignKey(
-        EmailDomain, on_delete=models.CASCADE, related_name="mailboxes"
-    )
-
-    email = models.EmailField(unique=True)
-    name = models.CharField(max_length=255, blank=True, default="")
-    quota_mb = models.PositiveIntegerField(default=1024)
-
-    status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.PENDING
-    )
-    error = models.TextField(blank=True, null=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["email"]
-
-    def __str__(self):
-        return f"{self.email} ({self.status})"
-
-
-class EmailAlias(models.Model):
-    """An alias address forwarding to another address (iRedMail alias)."""
-
-    account = models.ForeignKey(
-        "accounts.Account", on_delete=models.CASCADE, related_name="email_aliases"
-    )
-    domain = models.ForeignKey(
-        EmailDomain, on_delete=models.CASCADE, related_name="aliases"
-    )
-
-    address = models.EmailField()
-    goto = models.EmailField()
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["address"]
-        unique_together = ("address", "goto")
-
-    def __str__(self):
-        return f"{self.address} -> {self.goto}"
-
-
 class EmailTemplate(models.Model):
     """A reusable, tenant-owned email template with variable interpolation.
 

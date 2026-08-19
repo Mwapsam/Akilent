@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import URLValidator
 
 
 class SiteSettings(models.Model):
@@ -40,5 +41,80 @@ class SiteSettings(models.Model):
 
     @classmethod
     def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class MailProviderSettings(models.Model):
+    """Platform-wide mail infrastructure configuration, edited by superadmins.
+
+    A singleton (always pk=1) loaded via MailProviderSettings.load().
+    Allows runtime switching between different mail server backends (Stalwart, SES, etc.)
+    and message delivery providers (SMTP, SES API, etc.) without redeploying.
+    """
+
+    BACKEND_CHOICES = [
+        ("stalwart", "Stalwart Mail Server"),
+        ("ses", "AWS SES"),
+        ("null", "Null (dev/test)"),
+    ]
+
+    SEND_BACKEND_CHOICES = [
+        ("smtp", "SMTP Relay"),
+        ("ses", "AWS SES API"),
+        ("null", "Null (dev/test)"),
+    ]
+
+    # Infrastructure provider (domain provisioning, DKIM, mailbox management if applicable)
+    infra_backend = models.CharField(
+        max_length=32,
+        choices=BACKEND_CHOICES,
+        default="stalwart",
+        help_text="Mail server for domain/DKIM infrastructure"
+    )
+
+    # Message delivery provider
+    send_backend = models.CharField(
+        max_length=32,
+        choices=SEND_BACKEND_CHOICES,
+        default="smtp",
+        help_text="Provider for outbound message delivery"
+    )
+
+    # SES-specific configuration (read from env vars at runtime, just store names here)
+    aws_region = models.CharField(
+        max_length=32,
+        default="us-east-1",
+        help_text="AWS region for SES (e.g., us-east-1, eu-west-1). Credentials from AWS_ACCESS_KEY_ID env vars."
+    )
+    ses_configuration_set = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="SES configuration set name for tracking bounces/complaints (optional but recommended)"
+    )
+    ses_sns_topic_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="SNS topic ARN for receiving bounce/complaint notifications (required if configuration_set is used)"
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Mail provider settings"
+        verbose_name_plural = "Mail provider settings"
+
+    def __str__(self):
+        return f"Mail: {self.get_infra_backend_display()} (send: {self.get_send_backend_display()})"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        """Get or create the singleton settings row."""
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
