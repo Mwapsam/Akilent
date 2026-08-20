@@ -1,75 +1,22 @@
 """Management command to start the SMTP relay server."""
 import asyncio
+import base64
 import hashlib
 import logging
+from email.parser import BytesParser
 
 from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import SMTP as SMTPProtocol, AuthResult
+from aiosmtpd.smtp import AuthResult
 from django.core.management.base import BaseCommand
-from email.parser import BytesParser
 
 logger = logging.getLogger(__name__)
 
 
-class SMTPRelayHandler:
-    """Combined AUTH and DATA handler for SMTP relay."""
-
-    async def handle_AUTH(self, args):
-        """Validate SMTP credentials."""
-        if len(args) < 1:
-            return False
-
-        mech = args[0].upper()
-        if mech == "LOGIN":
-            return await self._auth_login()
-        elif mech == "PLAIN":
-            return await self._auth_plain(args)
-        return False
-
-    async def _auth_login(self):
-        """Handle AUTH LOGIN."""
-        raise NotImplementedError("Use aiosmtpd's built-in AUTH")
-
-    async def _auth_plain(self, args):
-        """Handle AUTH PLAIN."""
-        raise NotImplementedError("Use aiosmtpd's built-in AUTH")
-
-    @staticmethod
-    def _verify_credential(username: str, password: str) -> bool:
-        """Verify SMTP credential against database."""
-        from apps.email.models import SmtpCredential
-
-        try:
-            cred = SmtpCredential.objects.get(
-                username=username.lower(), is_active=True
-            )
-        except SmtpCredential.DoesNotExist:
-            return False
-
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        return password_hash == cred.secret_hash
-
-
-class SMTPRelayServer(SMTPProtocol):
-    """SMTP server with credential validation and SES delivery."""
-
-    async def smtp_EHLO(self, hostname):
-        """Announce AUTH capabilities."""
-        self.peer = self._peer
-        await self.push(f"250-{self.hostname} Hello {hostname}")
-        await self.push(b"250-AUTH LOGIN PLAIN")
-        await self.push(b"250-STARTTLS")
-        await self.push(b"250 HELP")
-        return True
-
-    async def smtp_AUTH(self, *args):
-        """Handle AUTH command using aiosmtpd built-in mechanism."""
-        # aiosmtpd handles AUTH automatically if auth_required=True
-        # and we provide an auth_required_insecure callback
-        return NotImplemented
+class RelayHandler:
+    """Handles incoming SMTP messages and delivers via configured send provider."""
 
     async def handle_DATA(self, server, session, envelope):
-        """Accept and queue email for delivery."""
+        """Accept email and queue for delivery."""
         if not session.authenticated:
             return "530 Authentication required"
 
@@ -82,19 +29,21 @@ class SMTPRelayServer(SMTPProtocol):
                 username=username
             )
         except SmtpCredential.DoesNotExist:
-            logger.warning(f"SMTP: credential not found: {username}")
+            logger.warning(f"SMTP: credential not found after auth: {username}")
             return "500 Authentication state lost"
 
-        # Parse email
+        # Parse the email
         parser = BytesParser()
         msg = parser.parsebytes(envelope.content)
 
+        # Extract headers
         from_email = envelope.mail_from or msg.get("From", "")
         to_email = envelope.rcpt_tos[0] if envelope.rcpt_tos else ""
 
         if not from_email or not to_email:
-            return "550 Missing From or To"
+            return "550 Missing From or To header"
 
+        # Queue for delivery
         try:
             create_and_queue_message(
                 account=cred.account,
@@ -104,11 +53,11 @@ class SMTPRelayServer(SMTPProtocol):
                 text_body=msg.get_payload() if not msg.is_multipart() else "",
                 html_body="",
             )
-            logger.info(f"SMTP: queued from {username} to {to_email}")
+            logger.info(f"SMTP: queued message from {username} to {to_email}")
             return "250 Message accepted"
         except Exception as exc:
-            logger.error(f"SMTP: {exc}")
-            return "550 Failed to queue message"
+            logger.error(f"SMTP: failed to queue message: {exc}")
+            return f"550 Failed to queue message: {str(exc)[:100]}"
 
 
 class Command(BaseCommand):
@@ -127,41 +76,60 @@ class Command(BaseCommand):
         self.stdout.write(f"Starting SMTP relay on {host}:{port}")
 
         def auth_callback(server, session, envelope, mechanism, auth_data):
-            """Verify SMTP credentials."""
+            """Verify SMTP credentials against database."""
+            from apps.email.models import SmtpCredential
+
+            # Decode credentials based on mechanism
             if mechanism == "LOGIN":
                 # auth_data is list: [username, password]
-                username, password = auth_data
+                if len(auth_data) < 2:
+                    return AuthResult(success=False)
+                username, password = auth_data[0], auth_data[1]
             elif mechanism == "PLAIN":
-                # auth_data is bytes: \0username\0password (base64 encoded)
-                import base64
+                # auth_data is bytes or str: \0username\0password (base64 encoded by client)
                 try:
-                    decoded = base64.b64decode(auth_data).decode()
+                    if isinstance(auth_data, bytes):
+                        decoded = base64.b64decode(auth_data).decode()
+                    else:
+                        decoded = base64.b64decode(auth_data).decode()
                     parts = decoded.split("\0")
-                    username = parts[1] if len(parts) >= 2 else parts[0]
-                    password = parts[2] if len(parts) >= 3 else parts[1]
-                except:
+                    if len(parts) == 3:
+                        # authzid, authcid, passwd
+                        username, password = parts[1], parts[2]
+                    elif len(parts) == 2:
+                        # authcid, passwd
+                        username, password = parts[0], parts[1]
+                    else:
+                        return AuthResult(success=False)
+                except (ValueError, UnicodeDecodeError):
+                    logger.warning("Failed to decode AUTH PLAIN credentials")
                     return AuthResult(success=False)
             else:
                 return AuthResult(success=False)
 
-            from apps.email.models import SmtpCredential
+            # Look up and verify credential
             try:
                 cred = SmtpCredential.objects.get(
                     username=username.lower(), is_active=True
                 )
                 password_hash = hashlib.sha256(password.encode()).hexdigest()
                 if password_hash == cred.secret_hash:
+                    logger.info(f"SMTP auth successful: {username} (account={cred.account_id})")
                     return AuthResult(success=True, identity=username)
-            except:
-                pass
+            except SmtpCredential.DoesNotExist:
+                logger.warning(f"SMTP auth failed: credential not found for {username}")
+                return AuthResult(success=False)
+
+            logger.warning(f"SMTP auth failed: invalid password for {username}")
             return AuthResult(success=False)
 
+        # Create and run the controller
         controller = Controller(
-            SMTPRelayServer,
+            RelayHandler(),
             hostname=host,
             port=port,
             auth_required=True,
-            auth_required_insecure=False,
+            auth_require_tls=False,  # Allow auth over unencrypted (for localhost dev)
             auth_callback=auth_callback,
         )
 
