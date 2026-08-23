@@ -1,31 +1,62 @@
 import logging
 
-from apps.whatsapp.models import AutomationRule, Conversation, MessageLog
+from apps.core.events import MessageReceived, MessageStatusChanged
+from apps.whatsapp.models import AutomationRule, WhatsAppContact
 
 logger = logging.getLogger(__name__)
 
 
-def on_message_received(message: MessageLog) -> None:
-    """Fire automation rules when an inbound WhatsApp message arrives."""
+def on_message_received(event: MessageReceived, **kwargs) -> None:
+    """Fire automation rules when a MessageReceived domain event is published.
+
+    This is triggered by apps/whatsapp when an inbound message is processed,
+    published as a domain event via the event dispatcher. Rule evaluation
+    is dispatched asynchronously to the 'automation' Celery queue to keep
+    the event publisher (webhook handling) decoupled from rule latency.
+
+    Note: **kwargs is required by Django's signal dispatcher, though unused.
+    """
+    from apps.automation.tasks import evaluate_rules_for_message
+
+    # Get the contact details for context
+    try:
+        contact = WhatsAppContact.objects.get(id=event.contact_id)
+    except WhatsAppContact.DoesNotExist:
+        logger.warning(
+            "on_message_received: contact %s not found for account %s",
+            event.contact_id,
+            event.account_id,
+        )
+        return
+
+    context = {
+        "phone_number": contact.phone_number,
+        "message_type": event.message_type,
+        "message_contains": event.body,
+    }
+
+    # Dispatch rule evaluation to Celery asynchronously (automation queue)
+    evaluate_rules_for_message.delay(
+        event.account_id,
+        AutomationRule.TriggerEvent.MESSAGE_RECEIVED,
+        context,
+    )
+
+
+def on_message_sent(message_log) -> None:
+    """Fire automation rules after an outbound message is sent.
+
+    Note: This is kept for backwards compatibility but is not yet
+    driven by domain events. It's called from views/tasks directly.
+    TODO(Phase 2): refactor to use domain events via dispatcher.
+    """
     from apps.automation.workflows import execute_rule
 
     context = {
-        "phone_number": message.contact.phone_number,
-        "message_type": message.message_type,
-        "message_contains": message.content,
+        "phone_number": message_log.contact.phone_number,
+        "message_type": message_log.message_type,
     }
-    _dispatch(message.account_id, AutomationRule.TriggerEvent.MESSAGE_RECEIVED, context)
-
-
-def on_message_sent(message: MessageLog) -> None:
-    """Fire automation rules after an outbound message is sent."""
-    from apps.automation.workflows import execute_rule
-
-    context = {
-        "phone_number": message.contact.phone_number,
-        "message_type": message.message_type,
-    }
-    _dispatch(message.account_id, AutomationRule.TriggerEvent.MESSAGE_SENT, context)
+    _dispatch(message_log.account_id, AutomationRule.TriggerEvent.MESSAGE_SENT, context)
 
 
 def on_lead_created(account_id: int, lead_id: str, fields: dict) -> None:

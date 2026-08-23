@@ -20,6 +20,12 @@ class SiteSettings(models.Model):
     signups_enabled = models.BooleanField(default=True)
     payments_enabled = models.BooleanField(default=True)
 
+    # Phase 1: temporary gate for automation event publishing until Phase 4's ModuleSubscription exists
+    automation_events_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable domain event publishing for automation rules and AI (Phase 1 beta)",
+    )
+
     # New-signup defaults
     default_plan = models.ForeignKey(
         "billing.Plan", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

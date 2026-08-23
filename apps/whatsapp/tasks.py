@@ -1,9 +1,11 @@
 import logging
 
 from celery import shared_task
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core.events import dispatcher, MessageReceived, MessageStatusChanged
 from apps.whatsapp.models import (
     Conversation,
     MessageLog,
@@ -18,6 +20,27 @@ logger = logging.getLogger(__name__)
 _OUTBOUND_BATCH = 50
 _MEDIA_BATCH = 20
 _MAX_EVENT_ATTEMPTS = 3
+_AUTOMATION_EVENTS_CACHE_KEY = "whatsapp_automation_events_enabled"
+_AUTOMATION_EVENTS_CACHE_TTL = 60  # 60 second cache for SiteSettings flag
+
+
+def _automation_events_enabled() -> bool:
+    """Check if automation events are enabled, with short-lived caching.
+
+    This caches the SiteSettings.automation_events_enabled flag for 60 seconds
+    to avoid a database query on every webhook. The flag can be changed at runtime;
+    the cache will refresh within the TTL.
+
+    TODO(Phase 4): Replace with ModuleSubscription model check.
+    """
+    cached = cache.get(_AUTOMATION_EVENTS_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    from apps.core.models import SiteSettings
+    result = SiteSettings.objects.filter(automation_events_enabled=True).exists()
+    cache.set(_AUTOMATION_EVENTS_CACHE_KEY, result, _AUTOMATION_EVENTS_CACHE_TTL)
+    return result
 
 
 @shared_task(bind=True, max_retries=_MAX_EVENT_ATTEMPTS, default_retry_delay=60)
@@ -130,6 +153,24 @@ def _handle_inbound_message(event: WebhookEventLog) -> None:
     contact.last_message_at = msg_ts
     contact.save(update_fields=["last_message_at"])
 
+    # Publish domain event for subscribers (automation, AI, analytics)
+    # Gate behind a temporary SiteSettings flag until Phase 4's ModuleSubscription exists
+    try:
+        if _automation_events_enabled():
+            dispatcher.publish(
+                MessageReceived(
+                    account_id=account.id,
+                    contact_id=contact.id,
+                    message_id=message.get("id"),
+                    channel="whatsapp",
+                    body=content,
+                    message_type=msg_type,
+                    occurred_at=msg_ts,
+                )
+            )
+    except Exception as exc:
+        logger.debug("_handle_inbound_message: failed to publish event: %s", exc)
+
 
 def _handle_status_update(event: WebhookEventLog) -> None:
     value = event.payload["entry"][0]["changes"][0]["value"]
@@ -146,6 +187,22 @@ def _handle_status_update(event: WebhookEventLog) -> None:
             direction=MessageLog.Direction.OUTBOUND,
         )
         log.apply_status_update(new_status)
+
+        # Publish domain event for subscribers (automation, AI, analytics)
+        # Gate behind a temporary SiteSettings flag until Phase 4's ModuleSubscription exists
+        try:
+            if _automation_events_enabled():
+                dispatcher.publish(
+                    MessageStatusChanged(
+                        account_id=log.account_id,
+                        message_id=message_id,
+                        status=new_status,
+                        occurred_at=timezone.now(),
+                    )
+                )
+        except Exception as exc:
+            logger.debug("_handle_status_update: failed to publish event: %s", exc)
+
     except MessageLog.DoesNotExist:
         logger.debug(
             "_handle_status_update: no outbound log for message_id=%s", message_id

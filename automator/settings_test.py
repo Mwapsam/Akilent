@@ -14,6 +14,9 @@ os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("FLUTTERWAVE_SECRET_KEY", "FLWSECK_TEST-testkey")
 os.environ.setdefault("FLUTTERWAVE_WEBHOOK_HASH", "test-hash")
+os.environ.setdefault("WHATSAPP_ENABLED", "true")
+os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_verify_token")
+os.environ.setdefault("WHATSAPP_APP_SECRET", "test_app_secret")
 
 from automator.settings import *  # noqa: F401,F403,E402
 
