@@ -116,7 +116,7 @@ class AutomationSubscriberTest(TestCase):
             account=account, phone_number="+260971234569"  # Valid Zambian number
         )
 
-        from apps.whatsapp.models import AutomationRule
+        from apps.automation.models import AutomationRule
 
         rule = AutomationRule.objects.create(
             account=account,

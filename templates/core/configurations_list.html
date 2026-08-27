@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Configurations{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="flex items-center gap-2 text-sm">
+    <span class="font-medium text-gray-900">
+      Configurations
+    </span>
+  </div>
+{% endblock %}
+
+{% block page_header %}
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">
+        Configurations
+      </h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Manage application configuration values.
+      </p>
+    </div>
+
+    <a href="{% url 'core:create_configuration' %}"
+       class="btn-primary inline-flex items-center gap-2">
+      {% include "components/icon.html" with name="plus" class="w-4 h-4" %}
+      <span>New configuration</span>
+    </a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class="card overflow-hidden">
+
+    {% if configurations %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 border-b border-border">
+            <tr>
+              <th class="px-6 py-3 text-left font-medium text-gray-500">
+                Name
+              </th>
+              <th class="px-6 py-3 text-left font-medium text-gray-500">
+                Value
+              </th>
+              <th class="px-6 py-3 text-right font-medium text-gray-500">
+                Actions
+              </th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-border">
+            {% for configuration in configurations %}
+              <tr class="hover:bg-gray-50">
+
+                <td class="px-6 py-4">
+                  <span class="font-medium text-gray-900">
+                    {{ configuration.name }}
+                  </span>
+                </td>
+
+                <td class="px-6 py-4">
+                  <span class="text-gray-600 break-all">
+                    {{ configuration.value }}
+                  </span>
+                </td>
+
+                <td class="px-6 py-4 text-right">
+                  <div class="flex justify-end gap-2">
+
+                    <a href="{% url 'core:edit_configuration' configuration.pk %}"
+                       class="btn-ghost">
+                      Edit
+                    </a>
+
+                    <form method="post"
+                          action="{% url 'core:delete_configuration' configuration.pk %}"
+                          class="inline"
+                          onsubmit="return confirm('Delete this configuration?');">
+                      {% csrf_token %}
+
+                      <button type="submit"
+                              class="btn-ghost text-red-600 hover:bg-red-50">
+                        Delete
+                      </button>
+                    </form>
+
+                  </div>
+                </td>
+
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    {% else %}
+
+      <div class="px-6 py-12 text-center">
+        <div class="mx-auto w-12 h-12 rounded-xl bg-gray-100
+                    flex items-center justify-center mb-4">
+          {% include "components/icon.html" with name="settings" class="w-6 h-6 text-gray-400" %}
+        </div>
+
+        <h3 class="text-sm font-semibold text-gray-900">
+          No configurations
+        </h3>
+
+        <p class="mt-1 text-sm text-gray-500">
+          Create your first application configuration.
+        </p>
+
+        <div class="mt-5">
+          <a href="{% url 'core:create_configuration' %}"
+             class="btn-primary">
+            Create configuration
+          </a>
+        </div>
+      </div>
+
+    {% endif %}
+
+  </div>
+{% endblock %}

@@ -1,13 +1,17 @@
 from django.db import models
-from django.core.validators import URLValidator
 
+class Configurations(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    value = models.TextField()
+
+    class Meta:
+        verbose_name = "Configuration"
+        verbose_name_plural = "Configurations"
+
+    def __str__(self):
+        return self.name
 
 class SiteSettings(models.Model):
-    """Platform-wide configuration, edited by admins in the Settings page.
-
-    A singleton (always pk=1) loaded via ``SiteSettings.load()``.
-    """
-
     # Branding
     app_name = models.CharField(max_length=100, default="Automator")
     logo = models.ImageField(upload_to="branding/", blank=True, null=True)

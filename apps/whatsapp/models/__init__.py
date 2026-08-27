@@ -1,5 +1,4 @@
 from .account import EncryptedTextField, _fernet
-from .automation import AutomationRule
 from .contact import CrmBinding, WhatsAppContact, normalize_phone
 from .conversation import Conversation
 from .message import MessageLog
@@ -10,7 +9,6 @@ from .webhook import WebhookEventLog
 
 __all__ = [
     "_fernet",
-    "AutomationRule",
     "CrmBinding",
     "Conversation",
     "EncryptedTextField",

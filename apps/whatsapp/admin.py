@@ -1,7 +1,7 @@
 from django.contrib import admin
 
+from apps.automation.models import AutomationRule
 from apps.whatsapp.models import (
-    AutomationRule,
     CrmBinding,
     Conversation,
     MessageLog,

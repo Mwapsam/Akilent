@@ -1,0 +1,139 @@
+"""Provider-agnostic WhatsAppProvider interface.
+
+Any WhatsApp-compatible backend (Meta Cloud API, Twilio, Vonage, ...)
+is supported by implementing this ABC. Business logic imports only from here
+and from apps.whatsapp.types — never from a concrete provider module.
+
+Design principle: every method returns a typed dataclass from apps.whatsapp.types,
+never a raw dict. Adapters belong in the provider, not scattered across the
+service layer.
+"""
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from apps.whatsapp.types import (
+    MediaUrlResult,
+    ReadReceiptResult,
+    SendResult,
+)
+
+
+class WhatsAppProvider(ABC):
+    """Abstract interface for a WhatsApp-compatible messaging backend.
+
+    Implement all abstract methods to add a new provider. The factory in
+    apps.whatsapp.providers.__init__ resolves the concrete class at runtime.
+
+    Threading: instances are not thread-safe. Instantiate one per request,
+    per Celery task, or per service call.
+    """
+
+    @abstractmethod
+    def send_text(self, to: str, body: str) -> SendResult:
+        """Send a plain text message.
+
+        Args:
+            to: Recipient phone number (with or without + prefix).
+            body: Plain text message body.
+
+        Returns:
+            SendResult with message_id and success status.
+
+        Raises:
+            WhatsAppProviderError: on network failure, auth error, etc.
+        """
+
+    @abstractmethod
+    def send_template(
+        self,
+        to: str,
+        template_name: str,
+        language: str,
+        components: list,
+    ) -> SendResult:
+        """Send a pre-approved template message.
+
+        Args:
+            to: Recipient phone number (with or without + prefix).
+            template_name: Name of the approved template.
+            language: ISO 639-1 language code (e.g., 'en').
+            components: List of template component dicts from Meta's schema.
+
+        Returns:
+            SendResult with message_id and success status.
+
+        Raises:
+            WhatsAppProviderError: on network failure, auth error, etc.
+        """
+
+    @abstractmethod
+    def send_media(
+        self,
+        to: str,
+        media_type: str,
+        media_id: str,
+        caption: str = "",
+    ) -> SendResult:
+        """Send a media message (image, video, document, audio).
+
+        Args:
+            to: Recipient phone number (with or without + prefix).
+            media_type: 'image', 'video', 'document', or 'audio'.
+            media_id: Provider's media ID (already uploaded).
+            caption: Optional caption for image/video (ignored for audio/document).
+
+        Returns:
+            SendResult with message_id and success status.
+
+        Raises:
+            WhatsAppProviderError: on network failure, auth error, etc.
+        """
+
+    @abstractmethod
+    def get_media_url(self, media_id: str) -> MediaUrlResult:
+        """Retrieve the download URL for an uploaded media file.
+
+        Args:
+            media_id: Provider's media ID from an inbound message.
+
+        Returns:
+            MediaUrlResult with downloadable URL.
+
+        Raises:
+            WhatsAppProviderError: on network failure, auth error, etc.
+        """
+
+    @abstractmethod
+    def download_media(self, media_url: str) -> bytes:
+        """Download media from a provider-supplied URL.
+
+        Args:
+            media_url: URL returned by get_media_url().
+
+        Returns:
+            Raw bytes of the media file.
+
+        Raises:
+            WhatsAppProviderError: on network failure, etc.
+        """
+
+    @abstractmethod
+    def mark_as_read(self, message_id: str) -> ReadReceiptResult:
+        """Mark an inbound message as read.
+
+        Args:
+            message_id: Meta message ID from an inbound webhook.
+
+        Returns:
+            ReadReceiptResult indicating success or failure.
+
+        Raises:
+            WhatsAppProviderError: on network failure, auth error, etc.
+        """
+
+
+class WhatsAppProviderError(Exception):
+    """Base exception for WhatsApp provider errors."""
+
+    pass

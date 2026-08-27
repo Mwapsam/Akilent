@@ -34,7 +34,6 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.whatsapp",
     "apps.email",
-    "apps.bitrix",
     "apps.automation",
     "apps.billing",
     "apps.api",
@@ -189,31 +188,6 @@ if not DEBUG and WHATSAPP_ENABLED:
     if not WHATSAPP_APP_SECRET:
         raise ValueError("WHATSAPP_APP_SECRET is missing")
 
-# --- Bitrix ---
-BITRIX_CLIENT_ID = os.getenv("BITRIX_CLIENT_ID")
-BITRIX_CLIENT_SECRET = os.getenv("BITRIX_CLIENT_SECRET")
-
-# The portal you authorize against, e.g. "mycompany.bitrix24.com" (no scheme).
-# OAuth authorization happens on the portal itself; only the token exchange
-# uses oauth.bitrix.info.
-BITRIX_PORTAL_DOMAIN = os.getenv("BITRIX_PORTAL_DOMAIN", "")
-
-BITRIX24_WEBHOOK_TIMEOUT = 10
-BITRIX24_OAUTH_REDIRECT_URL = os.getenv(
-    "BITRIX24_OAUTH_REDIRECT_URL",
-    f"https://{BASE_DOMAIN}/auth/bitrix/callback/",
-)
-
-if not DEBUG and BITRIX_ENABLED:
-    if not BITRIX_CLIENT_ID:
-        raise ValueError(
-            "BITRIX_CLIENT_ID missing"
-        )
-
-    if not BITRIX_CLIENT_SECRET:
-        raise ValueError(
-            "BITRIX_CLIENT_SECRET missing"
-        )
 
 # --- Slack ---
 

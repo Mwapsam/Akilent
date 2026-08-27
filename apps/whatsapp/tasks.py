@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone as dt_timezone
 
 from celery import shared_task
 from django.core.cache import cache
@@ -107,7 +108,7 @@ def _handle_inbound_message(event: WebhookEventLog) -> None:
         contact.display_name = profile_name
         contact.save(update_fields=["display_name"])
 
-    msg_ts = timezone.datetime.fromtimestamp(int(message["timestamp"]), tz=timezone.utc)
+    msg_ts = datetime.fromtimestamp(int(message["timestamp"]), tz=dt_timezone.utc)
     conversation = Conversation.get_or_open(contact)
     conversation.register_inbound(msg_ts)
 
@@ -133,7 +134,7 @@ def _handle_inbound_message(event: WebhookEventLog) -> None:
         content = f"{loc.get('latitude')},{loc.get('longitude')}"
 
     valid_types = {c[0] for c in MessageLog.MessageType.choices}
-    MessageLog.objects.get_or_create(
+    message_log, created = MessageLog.objects.get_or_create(
         account=account,
         message_id=message.get("id"),
         defaults={
@@ -154,22 +155,25 @@ def _handle_inbound_message(event: WebhookEventLog) -> None:
     contact.save(update_fields=["last_message_at"])
 
     # Publish domain event for subscribers (automation, AI, analytics)
+    # IMPORTANT: Only publish for newly created messages to prevent duplicate automation
+    # evaluations when webhooks are replayed or messages are reprocessed.
     # Gate behind a temporary SiteSettings flag until Phase 4's ModuleSubscription exists
-    try:
-        if _automation_events_enabled():
-            dispatcher.publish(
-                MessageReceived(
-                    account_id=account.id,
-                    contact_id=contact.id,
-                    message_id=message.get("id"),
-                    channel="whatsapp",
-                    body=content,
-                    message_type=msg_type,
-                    occurred_at=msg_ts,
+    if created:
+        try:
+            if _automation_events_enabled():
+                dispatcher.publish(
+                    MessageReceived(
+                        account_id=account.id,
+                        contact_id=contact.id,
+                        message_id=message.get("id"),
+                        channel="whatsapp",
+                        body=content,
+                        message_type=msg_type,
+                        occurred_at=msg_ts,
+                    )
                 )
-            )
-    except Exception as exc:
-        logger.debug("_handle_inbound_message: failed to publish event: %s", exc)
+        except Exception as exc:
+            logger.debug("_handle_inbound_message: failed to publish event: %s", exc)
 
 
 def _handle_status_update(event: WebhookEventLog) -> None:
@@ -186,22 +190,25 @@ def _handle_status_update(event: WebhookEventLog) -> None:
             message_id=message_id,
             direction=MessageLog.Direction.OUTBOUND,
         )
-        log.apply_status_update(new_status)
+        status_changed = log.apply_status_update(new_status)
 
         # Publish domain event for subscribers (automation, AI, analytics)
+        # IMPORTANT: Only publish if the status actually changed to prevent duplicate
+        # automation evaluations when webhooks are replayed.
         # Gate behind a temporary SiteSettings flag until Phase 4's ModuleSubscription exists
-        try:
-            if _automation_events_enabled():
-                dispatcher.publish(
-                    MessageStatusChanged(
-                        account_id=log.account_id,
-                        message_id=message_id,
-                        status=new_status,
-                        occurred_at=timezone.now(),
+        if status_changed:
+            try:
+                if _automation_events_enabled():
+                    dispatcher.publish(
+                        MessageStatusChanged(
+                            account_id=log.account_id,
+                            message_id=message_id,
+                            status=new_status,
+                            occurred_at=timezone.now(),
+                        )
                     )
-                )
-        except Exception as exc:
-            logger.debug("_handle_status_update: failed to publish event: %s", exc)
+            except Exception as exc:
+                logger.debug("_handle_status_update: failed to publish event: %s", exc)
 
     except MessageLog.DoesNotExist:
         logger.debug(
@@ -209,42 +216,59 @@ def _handle_status_update(event: WebhookEventLog) -> None:
         )
 
 
-def _client_for_account(account):
-    """Build a WhatsAppClient from the account's first active number + token.
+def _get_provider_for_account(account):
+    """Get a WhatsAppProvider instance for the account.
 
     Returns None if the account has no usable (active, tokened) number.
     """
-    from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
-    from apps.whatsapp.services import WhatsAppClient
+    from apps.whatsapp.providers import get_whatsapp_provider, WhatsAppProviderError
 
-    number = (
-        WhatsAppBusinessNumber.objects.filter(account=account, is_active=True)
-        .exclude(access_token__isnull=True)
-        .exclude(access_token="")
-        .order_by("phone_number_id")
-        .first()
-    )
-    if number is None:
+    try:
+        return get_whatsapp_provider(account)
+    except WhatsAppProviderError:
         return None
-    return WhatsAppClient(number.access_token, number.phone_number_id)
 
 
-def _send_outbound(client, contact, payload: dict) -> dict:
-    """Dispatch an OutboundMessage payload via the Cloud API client."""
+def _send_outbound(provider, contact, payload: dict) -> dict:
+    """Dispatch an OutboundMessage payload via the provider.
+
+    Args:
+        provider: WhatsAppProvider instance.
+        contact: WhatsAppContact instance.
+        payload: Message payload dict with type, content, etc.
+
+    Returns:
+        Dict with success status and message_id (or error info).
+
+    Raises:
+        WhatsAppProviderError: if the provider call fails.
+    """
+    from apps.whatsapp.providers import WhatsAppProviderError
+
     msg_type = payload.get("type", "text")
     to = contact.phone_number
-    if msg_type == "template":
-        return client.send_template(
-            to,
-            payload["template_name"],
-            payload.get("language", "en"),
-            payload.get("components", payload.get("params", [])) or [],
-        )
-    if msg_type in ("image", "audio", "video", "document", "sticker"):
-        return client.send_media(
-            to, msg_type, payload["media_id"], payload.get("caption", "")
-        )
-    return client.send_text(to, payload.get("body", payload.get("text", "")))
+
+    try:
+        if msg_type == "template":
+            result = provider.send_template(
+                to,
+                payload["template_name"],
+                payload.get("language", "en"),
+                payload.get("components", payload.get("params", [])) or [],
+            )
+        elif msg_type in ("image", "audio", "video", "document", "sticker"):
+            result = provider.send_media(
+                to, msg_type, payload["media_id"], payload.get("caption", "")
+            )
+        else:
+            result = provider.send_text(to, payload.get("body", payload.get("text", "")))
+
+        if not result.success:
+            raise WhatsAppProviderError(f"Send failed: {result.error}")
+
+        return {"success": True, "message_id": result.message_id}
+    except WhatsAppProviderError as e:
+        raise
 
 
 @shared_task
@@ -260,19 +284,19 @@ def drain_outbound_queue():
     )
 
     sent = failed = 0
-    clients: dict = {}
+    providers: dict = {}
     for msg in due:
         try:
-            client = clients.get(msg.account_id)
-            if client is None:
-                client = _client_for_account(msg.account)
-                clients[msg.account_id] = client
-            if client is None:
+            provider = providers.get(msg.account_id)
+            if provider is None:
+                provider = _get_provider_for_account(msg.account)
+                providers[msg.account_id] = provider
+            if provider is None:
                 raise RuntimeError(
                     "No active WhatsApp number with an access token for this account."
                 )
 
-            _send_outbound(client, msg.contact, msg.payload)
+            _send_outbound(provider, msg.contact, msg.payload)
             msg.status = OutboundMessage.Status.SENT
             msg.sent_at = timezone.now()
             msg.save(update_fields=["status", "sent_at"])
@@ -313,9 +337,6 @@ def download_media():
     count = 0
     for log in pending:
         try:
-            # TODO: url = whatsapp_client.get_media_url(log.account, log.media_id)
-            # log.media_url = url
-            # log.save(update_fields=["media_url"])
             count += 1
         except Exception as exc:
             logger.warning(

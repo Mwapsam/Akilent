@@ -1,6 +1,7 @@
 import logging
 
-from apps.whatsapp.models import AutomationRule, OutboundMessage
+from apps.automation.models import AutomationRule
+from apps.whatsapp.models import OutboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -56,35 +57,6 @@ def _send_whatsapp_message(rule: AutomationRule, action: dict, context: dict) ->
     )
 
 
-def _update_crm_field(rule: AutomationRule, action: dict, context: dict) -> None:
-    """
-    Action payload example:
-        {"type": "update_crm_field", "entity_type": "deal", "entity_id_key": "deal_id", "fields": {"STAGE_ID": "WON"}}
-    """
-    from apps.bitrix.client import BitrixClient
-
-    entity_type = action.get("entity_type", "contact")
-    entity_id = context.get(action.get("entity_id_key", ""))
-    fields = action.get("fields", {})
-
-    if not entity_id:
-        logger.warning("_update_crm_field: no entity_id in context for rule pk=%s", rule.pk)
-        return
-
-    connection = getattr(rule.account, "bitrix_connection", None)
-    if connection is None:
-        logger.warning(
-            "_update_crm_field: account %s has no Bitrix connection (rule pk=%s)",
-            rule.account_id, rule.pk,
-        )
-        return
-
-    client = BitrixClient.from_connection(connection)
-    method = f"crm.{entity_type}.update"
-    client.call(method, {"id": entity_id, "fields": fields})
-
-
 _ACTION_HANDLERS = {
     "send_whatsapp_message": _send_whatsapp_message,
-    "update_crm_field": _update_crm_field,
 }

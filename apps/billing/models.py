@@ -290,3 +290,102 @@ class UsageSummary(models.Model):
             return cls.objects.get(account=account, period_start=period_start).emails_used
         except cls.DoesNotExist:
             return 0
+
+
+class ModuleSubscription(models.Model):
+    """Per-tenant feature gating model.
+
+    Replaces the earlier phase's Plan boolean columns and global SiteSettings
+    by enabling fine-grained, per-account feature control.
+
+    Phase 4 introduces this model to coexist with legacy Plan booleans and
+    SiteSettings during a migration period. Once all call sites are confirmed
+    using ModuleSubscription, the legacy fields can be removed in a later PR.
+
+    Distinction:
+      - ModuleSubscription.enabled: per-tenant business switch (e.g., "can this
+        account use WhatsApp at all?")
+      - SiteSettings.whatsapp_enabled, .bitrix_enabled: deployment-level "is
+        this vendor even integrated?" switch (e.g., "does this entire deployment
+        have WhatsApp configured?"). This remains unchanged.
+
+    Call hierarchy:
+      1. Check ModuleSubscription(account, module).enabled (Phase 4)
+      2. Fall back to Plan.{feature_bool} if ModuleSubscription missing (logging)
+      3. Eventually drop step 2 once migration is complete
+    """
+
+    WHATSAPP = "whatsapp"
+    EMAIL = "email"
+    AUTOMATION = "automation"
+    PAYMENTS = "payments"
+    AI = "ai"
+
+    MODULE_CHOICES = [
+        (WHATSAPP, "WhatsApp"),
+        (EMAIL, "Email"),
+        (AUTOMATION, "Automation"),
+        (PAYMENTS, "Payments"),
+        (AI, "AI"),
+    ]
+
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    SUSPENDED = "suspended"
+
+    BILLING_STATUS_CHOICES = [
+        (ACTIVE, "Active"),
+        (PAST_DUE, "Past Due"),
+        (SUSPENDED, "Suspended"),
+    ]
+
+    account = models.ForeignKey(
+        "accounts.Account",
+        on_delete=models.CASCADE,
+        related_name="module_subscriptions",
+    )
+    module = models.CharField(
+        max_length=20,
+        choices=MODULE_CHOICES,
+    )
+
+    # Business switch: is this module enabled for this account?
+    enabled = models.BooleanField(default=False)
+
+    # Optional reference to the subscription that covers this module
+    # (useful for multi-subscription accounts in the future)
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="module_subscriptions",
+    )
+
+    # Module-specific configuration (e.g., WhatsApp settings, AI model choices)
+    configuration = models.JSONField(default=dict, blank=True)
+
+    # Module-specific usage limits (e.g., {'emails_per_month': 10000})
+    # These are read by UsageSummary.reserve_* methods to enforce caps.
+    limits = models.JSONField(default=dict, blank=True)
+
+    # Billing status for this module (independent of overall subscription status)
+    billing_status = models.CharField(
+        max_length=20,
+        choices=BILLING_STATUS_CHOICES,
+        default=ACTIVE,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("account", "module")
+        indexes = [
+            models.Index(fields=["account", "enabled"]),
+            models.Index(fields=["module", "enabled"]),
+        ]
+
+    def __str__(self):
+        status = "✓" if self.enabled else "✗"
+        return f"{status} {self.account.slug}:{self.module}"

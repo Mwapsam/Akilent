@@ -42,8 +42,8 @@ class LimitChecker:
         plan = self._require_active_plan()
         if plan.max_whatsapp_numbers == -1:
             return
-        from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
-        count = WhatsAppBusinessNumber.objects.filter(account=self.account).count()
+        from apps.whatsapp import api as whatsapp_api
+        count = whatsapp_api.count_active_business_numbers(self.account)
         if count >= plan.max_whatsapp_numbers:
             raise PlanLimitExceeded(
                 f"WhatsApp number limit of {plan.max_whatsapp_numbers} reached. "
@@ -55,10 +55,8 @@ class LimitChecker:
         plan = self._require_active_plan()
         if plan.max_automation_rules == -1:
             return
-        from apps.whatsapp.models import AutomationRule
-        count = AutomationRule.objects.filter(
-            account=self.account, is_active=True
-        ).count()
+        from apps.automation import api as automation_api
+        count = automation_api.count_active_rules(self.account)
         if count >= plan.max_automation_rules:
             raise PlanLimitExceeded(
                 f"Automation rule limit of {plan.max_automation_rules} reached. "

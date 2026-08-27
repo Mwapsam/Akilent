@@ -1,27 +1,21 @@
 import logging
 
 from apps.core.events import MessageReceived, MessageStatusChanged
-from apps.whatsapp.models import AutomationRule, WhatsAppContact
+from apps.whatsapp import api as whatsapp_api
 
 logger = logging.getLogger(__name__)
 
 
 def on_message_received(event: MessageReceived, **kwargs) -> None:
-    """Fire automation rules when a MessageReceived domain event is published.
-
-    This is triggered by apps/whatsapp when an inbound message is processed,
-    published as a domain event via the event dispatcher. Rule evaluation
-    is dispatched asynchronously to the 'automation' Celery queue to keep
-    the event publisher (webhook handling) decoupled from rule latency.
-
-    Note: **kwargs is required by Django's signal dispatcher, though unused.
-    """
     from apps.automation.tasks import evaluate_rules_for_message
+    from apps.automation.models import AutomationRule
+    from apps.accounts import api as accounts_api
 
     # Get the contact details for context
     try:
-        contact = WhatsAppContact.objects.get(id=event.contact_id)
-    except WhatsAppContact.DoesNotExist:
+        account = accounts_api.get_account(event.account_id)
+        contact = whatsapp_api.get_contact(account, event.contact_id)
+    except Exception:
         logger.warning(
             "on_message_received: contact %s not found for account %s",
             event.contact_id,
@@ -44,13 +38,8 @@ def on_message_received(event: MessageReceived, **kwargs) -> None:
 
 
 def on_message_sent(message_log) -> None:
-    """Fire automation rules after an outbound message is sent.
-
-    Note: This is kept for backwards compatibility but is not yet
-    driven by domain events. It's called from views/tasks directly.
-    TODO(Phase 2): refactor to use domain events via dispatcher.
-    """
     from apps.automation.workflows import execute_rule
+    from apps.whatsapp.models import AutomationRule
 
     context = {
         "phone_number": message_log.contact.phone_number,
@@ -60,15 +49,11 @@ def on_message_sent(message_log) -> None:
 
 
 def on_lead_created(account_id: int, lead_id: str, fields: dict) -> None:
-    """Fire automation rules when a Bitrix24 lead is created."""
-    context = {"lead_id": lead_id, **fields}
-    _dispatch(account_id, AutomationRule.TriggerEvent.LEAD_CREATED, context)
+    pass
 
 
 def on_deal_stage_changed(account_id: int, deal_id: str, stage_id: str) -> None:
-    """Fire automation rules when a Bitrix24 deal changes stage."""
-    context = {"deal_id": deal_id, "stage_id": stage_id}
-    _dispatch(account_id, AutomationRule.TriggerEvent.DEAL_STAGE_CHANGED, context)
+    pass
 
 
 def _dispatch(account_id: int, event: str, context: dict) -> None:

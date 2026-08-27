@@ -9,6 +9,18 @@ GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
 
 class WhatsAppClient:
+    """DEPRECATED: Use apps.whatsapp.providers.get_whatsapp_provider() instead.
+
+    This class is kept for backward compatibility but should not be used in new code.
+    The provider pattern in apps.whatsapp.providers decouples the service layer from
+    Meta's API details and allows swapping implementations at runtime.
+
+    Migration path:
+        OLD: client = WhatsAppClient(token, number_id)
+             result = client.send_text(to, body)
+        NEW: provider = get_whatsapp_provider(account)
+             result = provider.send_text(to, body)  # returns SendResult
+    """
     """Thin wrapper around the Meta WhatsApp Cloud API."""
 
     def __init__(self, access_token: str, phone_number_id: str):

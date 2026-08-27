@@ -8,13 +8,6 @@ from django.utils.text import slugify
 
 
 class Account(models.Model):
-    """A tenant on the platform.
-
-    This replaces the old Bitrix-centric ``BitrixAccount`` as the central tenant.
-    It is provider-agnostic: WhatsApp numbers, email sending domains, billing and
-    the (optional) Bitrix24 connection all hang off an ``Account``.
-    """
-
     company_name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
 

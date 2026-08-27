@@ -274,3 +274,136 @@ class WhatsAppWebhookLoggingTest(TestCase):
         self.assertEqual(log.event_type, "unknown_field")
         self.assertFalse(log.processed)
         self.assertEqual(log.payload, payload)
+
+
+@override_settings(
+    WHATSAPP_VERIFY_TOKEN="test_verify_token",
+    WHATSAPP_APP_SECRET="test_app_secret",
+    CELERY_TASK_ALWAYS_EAGER=True,
+)
+class WhatsAppWebhookReplayTest(TestCase):
+    """Test that replayed webhooks don't cause duplicate automation evaluations.
+
+    This test verifies the fix for the bug where processing the same webhook
+    twice (replay scenario) would cause domain events to be published twice,
+    leading to duplicate automation rule evaluations.
+    """
+
+    def setUp(self):
+        from apps.billing.models import Plan, Subscription
+        from apps.core.models import SiteSettings
+
+        # Create test account + WhatsApp number
+        self.account = Account.objects.create(
+            company_name="Test Co",
+            slug="test-co",
+        )
+        self.number = WhatsAppBusinessNumber.objects.create(
+            account=self.account,
+            display_number="+1234567890",
+            phone_number_id="123456789",
+            waba_id="waba_123",
+            access_token="test_token_123",
+            is_active=True,
+        )
+
+        # Create a subscription so billing checks pass
+        plan = Plan.objects.first() or Plan.objects.create(
+            name="Test Plan",
+            slug="test-plan",
+            price_monthly=0,
+            max_conversations_per_month=-1,  # Unlimited
+        )
+        Subscription.objects.create(
+            account=self.account,
+            plan=plan,
+            status=Subscription.ACTIVE,
+            current_period_start=timezone.now(),
+        )
+
+        # Enable automation events for this test
+        settings = SiteSettings.load()
+        settings.automation_events_enabled = True
+        settings.save()
+
+    def test_replay_message_webhook_does_not_duplicate_events(self):
+        """Test that replaying a message webhook doesn't publish the event twice."""
+        from apps.core.events import dispatcher, MessageReceived
+        from apps.whatsapp.models import MessageLog, WebhookEventLog
+        from apps.whatsapp.tasks import process_whatsapp_event
+
+        ts = int(timezone.now().timestamp())
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messaging_product": "whatsapp",
+                                "metadata": {"phone_number_id": "123456789"},
+                                "messages": [
+                                    {
+                                        "id": "wamid_replay_test_123",
+                                        "from": "+260971234567",
+                                        "timestamp": str(ts),
+                                        "type": "text",
+                                        "text": {"body": "Hello"},
+                                    }
+                                ],
+                                "contacts": [{"profile": {"name": "Test User"}}],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        received_events = []
+
+        def capture_event(event: MessageReceived, **kwargs):
+            received_events.append(event)
+
+        # Subscribe to capture all MessageReceived events
+        dispatcher.subscribe(MessageReceived, capture_event)
+
+        request = _make_webhook_request("POST", payload, "test_app_secret")
+        view = WhatsAppWebhookView()
+
+        # First webhook receipt - creates WebhookEventLog
+        response1 = view.post(request)
+        self.assertEqual(response1.status_code, 200)
+
+        # Get the webhook event and process it
+        webhook_event = WebhookEventLog.objects.first()
+        self.assertIsNotNone(webhook_event)
+        process_whatsapp_event(webhook_event.id)
+
+        # Message should be created
+        logs = MessageLog.objects.filter(message_id="wamid_replay_test_123")
+        self.assertEqual(logs.count(), 1)
+
+        # One event should have been published
+        self.assertEqual(len(received_events), 1)
+        first_event_count = len(received_events)
+
+        # Replay the same webhook (second receipt of same event)
+        request2 = _make_webhook_request("POST", payload, "test_app_secret")
+        response2 = view.post(request2)
+        self.assertEqual(response2.status_code, 200)
+
+        # Get the second webhook event and process it
+        webhook_events = WebhookEventLog.objects.all()
+        self.assertEqual(webhook_events.count(), 2)
+        replay_event = webhook_events[1]
+        process_whatsapp_event(replay_event.id)
+
+        # Message log should still exist (duplicate not created)
+        logs_after_replay = MessageLog.objects.filter(message_id="wamid_replay_test_123")
+        self.assertEqual(logs_after_replay.count(), 1)
+
+        # Event should NOT have been published again (same number of events)
+        self.assertEqual(
+            len(received_events),
+            first_event_count,
+            "Replayed webhook should not publish event again (would cause duplicate automation)",
+        )

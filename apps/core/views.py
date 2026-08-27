@@ -9,11 +9,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.accounts.models import Account
+from apps.accounts import api as accounts_api
+from apps.billing import api as billing_api
 from apps.billing.models import Plan, Subscription, UsageSummary
 from apps.core import docs as docs_kb
 from apps.core import help as help_kb
-from apps.core.models import SiteSettings
+from apps.core.forms import ConfigurationForm
+from apps.core.models import Configurations, SiteSettings
 from apps.core.utils import admin_required
 
 User = get_user_model()
@@ -24,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 @admin_required
 def customers(request):
+    from apps.accounts.models import Account  # Admin view, direct import okay
+
     accounts = (
         Account.objects.all()
         .select_related("subscription", "subscription__plan")
@@ -34,8 +38,8 @@ def customers(request):
         "account": a,
         "owner": a.owner,
         "members": a.member_count,
-        "subscription": getattr(a, "subscription", None),
-        "emails_used": UsageSummary.get_current_email_usage(a),
+        "subscription": billing_api.get_subscription(a),
+        "emails_used": billing_api.get_email_usage(a),
     } for a in accounts]
 
     return render(request, "core/customers.html", {
@@ -48,6 +52,7 @@ def customers(request):
 @admin_required
 @require_POST
 def customer_toggle(request, pk):
+    from apps.accounts.models import Account  # Admin view, direct import okay
     a = get_object_or_404(Account, pk=pk)
     a.is_active = not a.is_active
     a.save(update_fields=["is_active"])
@@ -60,6 +65,7 @@ def customer_toggle(request, pk):
 @admin_required
 @require_POST
 def customer_subscription(request, pk):
+    from apps.accounts.models import Account  # Admin view, direct import okay
     a = get_object_or_404(Account, pk=pk)
     plan_id = request.POST.get("plan") or None
     plan = Plan.objects.filter(pk=plan_id).first() if plan_id else None
@@ -177,3 +183,96 @@ def user_toggle_admin(request, pk):
         f"{u.get_username()} is {'now a platform admin' if u.is_superuser else 'no longer an admin'}.",
     )
     return redirect("core:settings")
+
+
+@admin_required
+def create_configuration(request):
+    if request.method == "POST":
+        form = ConfigurationForm(request.POST)
+
+        if form.is_valid():
+            form.save()
+
+            messages.success(
+                request,
+                "Configuration created successfully.",
+            )
+
+            return redirect("core:configurations")
+
+    else:
+        form = ConfigurationForm()
+
+    return render(
+        request,
+        "core/create_configuration.html",
+        {
+            "form": form,
+        },
+    )
+
+
+@admin_required
+def configurations_list(request):
+    configurations = Configurations.objects.all()
+
+    return render(
+        request,
+        "core/configurations_list.html",
+        {
+            "configurations": configurations,
+        },
+    )
+
+
+@admin_required
+def edit_configuration(request, pk):
+    configuration = get_object_or_404(Configurations, pk=pk)
+
+    if request.method == "POST":
+        form = ConfigurationForm(request.POST, instance=configuration)
+
+        if form.is_valid():
+            form.save()
+
+            messages.success(
+                request,
+                "Configuration updated successfully.",
+            )
+
+            return redirect("core:configurations")
+
+    else:
+        form = ConfigurationForm(instance=configuration)
+
+    return render(
+        request,
+        "core/edit_configuration.html",
+        {
+            "form": form,
+            "configuration": configuration,
+        },
+    )
+
+
+@admin_required
+def delete_configuration(request, pk):
+    configuration = get_object_or_404(Configurations, pk=pk)
+
+    if request.method == "POST":
+        configuration.delete()
+
+        messages.success(
+            request,
+            "Configuration deleted successfully.",
+        )
+
+        return redirect("core:configurations")
+
+    return render(
+        request,
+        "core/delete_configuration.html",
+        {
+            "configuration": configuration,
+        },
+    )

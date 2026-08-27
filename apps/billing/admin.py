@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ManualPaymentRequest, PaymentMethod, Plan, Subscription, UsageSummary
+from .models import ManualPaymentRequest, ModuleSubscription, PaymentMethod, Plan, Subscription, UsageSummary
 
 
 @admin.register(Plan)
@@ -49,3 +49,34 @@ class ManualPaymentRequestAdmin(admin.ModelAdmin):
     search_fields = ["account__company_name", "reference"]
     raw_id_fields = ["account"]
     readonly_fields = ["created_at"]
+
+
+@admin.register(ModuleSubscription)
+class ModuleSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ["account", "module", "enabled", "billing_status", "created_at"]
+    list_filter = ["module", "enabled", "billing_status"]
+    search_fields = ["account__company_name", "account__slug"]
+    raw_id_fields = ["account", "subscription"]
+    readonly_fields = ["created_at", "updated_at"]
+    fieldsets = (
+        (
+            "Account & Module",
+            {"fields": ["account", "module"]},
+        ),
+        (
+            "Status",
+            {"fields": ["enabled", "billing_status"]},
+        ),
+        (
+            "Configuration & Limits",
+            {"fields": ["configuration", "limits"]},
+        ),
+        (
+            "Subscription Link",
+            {"fields": ["subscription"]},
+        ),
+        (
+            "Audit",
+            {"fields": ["created_at", "updated_at"]},
+        ),
+    )

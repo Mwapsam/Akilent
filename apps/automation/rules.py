@@ -1,6 +1,6 @@
 import logging
 
-from apps.whatsapp.models import AutomationRule
+from apps.automation.models import AutomationRule
 
 logger = logging.getLogger(__name__)
 
