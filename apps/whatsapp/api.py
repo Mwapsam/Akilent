@@ -1,10 +1,3 @@
-"""Public API for the whatsapp module.
-
-This is the single interface other modules (automation, bitrix, billing) should use
-to send messages, read contacts, and query webhook events.
-
-Direct imports of apps.whatsapp.models are not allowed outside of whatsapp.
-"""
 import logging
 from typing import Optional
 
@@ -97,20 +90,10 @@ def send_message(
     return msg
 
 
-# --- Webhook event access (for bitrix) ---
+# --- Webhook event access---
 
 
 def get_webhook_event(event_id: int, source: Optional[str] = None) -> WebhookEventLog:
-    """Get a webhook event by ID.
-
-    Args:
-        event_id: The event ID
-        source: Optional source to filter by (use WebhookEventLog.Source choices,
-                e.g. 'whatsapp', 'bitrix')
-
-    Raises:
-        WebhookEventLog.DoesNotExist: if event not found
-    """
     filters = {"pk": event_id}
     if source:
         filters["source"] = source

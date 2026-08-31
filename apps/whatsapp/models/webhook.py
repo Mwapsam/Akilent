@@ -6,7 +6,6 @@ class WebhookEventLog(models.Model):
 
     class Source(models.TextChoices):
         WHATSAPP = "whatsapp", "WhatsApp"
-        BITRIX = "bitrix", "Bitrix24"
 
     source = models.CharField(max_length=50, choices=Source.choices)
     event_type = models.CharField(max_length=100)

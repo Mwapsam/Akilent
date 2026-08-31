@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 
 from apps.accounts import onboarding as ob
 from apps.accounts.models import Account, Invitation, Membership
-from apps.email.models import EmailApiKey, EmailDomain, Mailbox
+from apps.email.models import EmailApiKey, EmailDomain
 
 
 @pytest.fixture
@@ -34,17 +34,6 @@ def test_next_step_advances_as_setup_progresses(account):
 
     EmailDomain.objects.filter(account=account).update(status=EmailDomain.Status.VERIFIED)
     assert ob.get_state(account)["next_step"]["key"] == "use"
-
-
-@pytest.mark.django_db
-def test_use_step_done_by_mailbox_or_api_key(account):
-    domain = EmailDomain.objects.create(
-        account=account, domain="mail.acme.com", status=EmailDomain.Status.VERIFIED
-    )
-    Mailbox.objects.create(account=account, domain=domain, email="a@mail.acme.com")
-    state = ob.get_state(account)
-    use = next(s for s in state["steps"] if s["key"] == "use")
-    assert use["done"] is True
 
 
 @pytest.mark.django_db

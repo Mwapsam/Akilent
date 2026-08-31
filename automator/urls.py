@@ -58,9 +58,6 @@ urlpatterns = [
 if settings.WHATSAPP_ENABLED:
     urlpatterns += [path("whatsapp/", include("apps.whatsapp.urls"))]
 
-if settings.BITRIX_ENABLED:
-    urlpatterns += [path("auth/bitrix/", include("apps.bitrix.urls"))]
-
 # Serve user-uploaded media in development.
 if settings.DEBUG:
     from django.conf.urls.static import static

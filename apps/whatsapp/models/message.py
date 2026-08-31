@@ -59,8 +59,6 @@ class MessageLog(models.Model):
 
     timestamp = models.DateTimeField()  # WhatsApp-reported time
 
-    bitrix_activity_id = models.CharField(max_length=50, blank=True, null=True)
-
     raw_payload = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

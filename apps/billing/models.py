@@ -293,28 +293,6 @@ class UsageSummary(models.Model):
 
 
 class ModuleSubscription(models.Model):
-    """Per-tenant feature gating model.
-
-    Replaces the earlier phase's Plan boolean columns and global SiteSettings
-    by enabling fine-grained, per-account feature control.
-
-    Phase 4 introduces this model to coexist with legacy Plan booleans and
-    SiteSettings during a migration period. Once all call sites are confirmed
-    using ModuleSubscription, the legacy fields can be removed in a later PR.
-
-    Distinction:
-      - ModuleSubscription.enabled: per-tenant business switch (e.g., "can this
-        account use WhatsApp at all?")
-      - SiteSettings.whatsapp_enabled, .bitrix_enabled: deployment-level "is
-        this vendor even integrated?" switch (e.g., "does this entire deployment
-        have WhatsApp configured?"). This remains unchanged.
-
-    Call hierarchy:
-      1. Check ModuleSubscription(account, module).enabled (Phase 4)
-      2. Fall back to Plan.{feature_bool} if ModuleSubscription missing (logging)
-      3. Eventually drop step 2 once migration is complete
-    """
-
     WHATSAPP = "whatsapp"
     EMAIL = "email"
     AUTOMATION = "automation"

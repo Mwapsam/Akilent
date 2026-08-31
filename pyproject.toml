@@ -1,7 +1,7 @@
 [project]
 name = "automator"
 version = "0.1.0"
-description = "WhatsApp - Bitrix automation engine"
+description = "WhatsApp - automation engine"
 authors = [
     {name = "Mwapsam",email = "mwapsam@gmail.com"}
 ]

@@ -129,26 +129,70 @@ USE_TZ = True
 
 # --- Static files ---
 
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME", "")
+AWS_S3_REGION_NAME = os.environ.get("AWS_S3_REGION_NAME", "")
+AWS_CLOUDFRONT_DOMAIN = os.environ.get("AWS_CLOUDFRONT_DOMAIN", "")
+CLOUDFRONT_ID = os.environ.get("AWS_CLOUDFRONT_ID", "")
 
-# Compressed + hashed (cache-busted) static files via WhiteNoise in production.
-# In DEBUG keep the plain backend so `runserver` needs no manifest/collectstatic.
-_staticfiles_backend = (
-    "django.contrib.staticfiles.storage.StaticFilesStorage"
-    if DEBUG
-    else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+USE_S3_STORAGE = bool(
+    (not DEBUG)
+    and AWS_ACCESS_KEY_ID
+    and AWS_SECRET_ACCESS_KEY
+    and AWS_STORAGE_BUCKET_NAME
 )
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": _staticfiles_backend},
-}
+SERVE_STATIC_MEDIA_LOCALLY = not USE_S3_STORAGE
+_enforce_https_env = os.environ.get("ENFORCE_HTTPS")
+if _enforce_https_env is None:
+    ENFORCE_HTTPS = not SERVE_STATIC_MEDIA_LOCALLY
+else:
+    ENFORCE_HTTPS = _enforce_https_env.lower() == "true"
 
-# User-uploaded files (e.g. the site logo). In DEBUG these are served by Django
-# (see automator/urls.py); in production point a web server / volume at MEDIA_ROOT.
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+if USE_S3_STORAGE:
+    STATICFILES_FINDERS = [
+        "django.contrib.staticfiles.finders.FileSystemFinder",
+        "django.contrib.staticfiles.finders.AppDirectoriesFinder",
+        "compressor.finders.CompressorFinder",
+    ]
+    STATICFILES_DIRS = [BASE_DIR / "static"]
+
+    AWS_DEFAULT_ACL = "public-read"
+    AWS_QUERYSTRING_AUTH = False
+
+    AWS_S3_OBJECT_PARAMETERS = {
+        "CacheControl": "max-age=31536000, public",
+    }
+
+    AWS_S3_CUSTOM_DOMAIN = (
+        AWS_CLOUDFRONT_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+    )
+
+    STATICFILES_LOCATION = "static"
+    STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{STATICFILES_LOCATION}/"
+
+    MEDIAFILES_LOCATION = "media"
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{MEDIAFILES_LOCATION}/"
+
+    STORAGES = {
+        "default": {"BACKEND": "task_it.storage_backends.mediaRootS3Boto3Storage"},
+        "staticfiles": {"BACKEND": "task_it.storage_backends.StaticToS3Storage"},
+    }
+else:
+    STATIC_URL = "/static/"
+    STATICFILES_DIRS = [BASE_DIR / "static"]
+    STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        },
+    }
+
 
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "localhost:8000")
 
@@ -169,7 +213,6 @@ FIELD_ENCRYPTION_KEYS = [FIELD_ENCRYPTION_KEY]
 # Celery schedule and startup secret validation. Flip to True to re-enable.
 
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "False").lower() == "true"
-BITRIX_ENABLED = os.getenv("BITRIX_ENABLED", "False").lower() == "true"
 
 # --- WhatsApp ---
 
@@ -190,27 +233,13 @@ if not DEBUG and WHATSAPP_ENABLED:
 
 
 # --- Slack ---
-
-# Incoming webhook URL for admin alerts (e.g. manual payment review requests).
-# Create one at https://api.slack.com/messaging/webhooks. Blank disables
-# posting — this isn't required in production the way email/Stalwart are.
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
-# --- Email (Stalwart Mail Server) ---
-
-# Stalwart HTTP Management API — provisions per-tenant domains, DKIM,
-# mailboxes and aliases. Port 8080 is internal-only (not published to host).
-# Auth is a static, pre-generated Bearer API key (format "API_..."),
-# created in the Stalwart admin UI/CLI — not a username/password login.
 STALWART_API_BASE = os.getenv("STALWART_API_BASE", "")
 STALWART_API_KEY = os.getenv("STALWART_API_KEY", "")
 
 # Provider selector — swap the implementation without touching business logic.
 MAIL_PROVIDER_BACKEND = os.getenv("MAIL_PROVIDER_BACKEND", "stalwart")
-
-# Outbound message send-provider selector (apps.email.providers.get_send_provider).
-# "smtp" (default) delivers through the self-hosted relay above; set to a
-# dotted import path to plug in SendGrid/Mailgun/SES/Resend/etc. later.
 EMAIL_SEND_PROVIDER_BACKEND = os.getenv("EMAIL_SEND_PROVIDER_BACKEND", "smtp")
 
 # Public domain used to build absolute tracking URLs in outgoing emails.
@@ -226,9 +255,6 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "True").lower() == "true"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 
-# Email is the always-on v1 product (unlike the flagged-off WhatsApp/Bitrix
-# verticals above), so these secrets are required in every production
-# deployment rather than gated behind a feature flag.
 if not DEBUG:
     if not STALWART_API_BASE:
         raise ValueError("STALWART_API_BASE is required")
@@ -287,8 +313,7 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
-# Email + billing always run; the WhatsApp/Bitrix routes and schedules are only
-# registered when their feature flag is on (see "Feature flags" above).
+
 CELERY_TASK_ROUTES = {
     # Accounts
     "apps.accounts.tasks.send_verification_email": {"queue": "celery"},
@@ -345,13 +370,6 @@ if WHATSAPP_ENABLED:
             "schedule": 60.0,
         },
     })
-
-if BITRIX_ENABLED:
-    CELERY_TASK_ROUTES["apps.bitrix.tasks.process_bitrix_webhook"] = {"queue": "bitrix"}
-    CELERY_BEAT_SCHEDULE["refresh-bitrix-tokens"] = {
-        "task": "apps.bitrix.tasks.refresh_tokens",
-        "schedule": 300.0,
-    }
 
 # --- Logging ---
 

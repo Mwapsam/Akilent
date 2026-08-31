@@ -81,8 +81,6 @@ def _plan_form_fields(post):
         "price_monthly": price,
         "max_conversations_per_month": _int("max_conversations_per_month"),
         "max_emails_per_month": _int("max_emails_per_month"),
-        "max_mailboxes": _int("max_mailboxes"),
-        "mailbox_storage_gb": _int("mailbox_storage_gb"),
         "max_forwarding_rules": _int("max_forwarding_rules"),
         "max_aliases": _int("max_aliases"),
         "max_automation_rules": _int("max_automation_rules"),

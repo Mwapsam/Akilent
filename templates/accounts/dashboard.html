@@ -137,13 +137,6 @@
         <a href="/email/mailboxes/" class="nav-link">{% include "components/icon.html" with name="inbox" class="w-5 h-5 shrink-0" %}<span>Create a mailbox</span></a>
         <a href="/billing/plans/" class="nav-link">{% include "components/icon.html" with name="card" class="w-5 h-5 shrink-0" %}<span>Manage billing</span></a>
       </div>
-      {% if BITRIX_ENABLED %}
-      <div class="mt-4 pt-4 border-t border-border">
-        <p class="text-xs font-medium text-gray-500 mb-1">Bitrix24 <span class="text-gray-400">(addon)</span></p>
-        {% if bitrix_connection %}<p class="text-sm text-gray-600">Connected: {{ bitrix_connection.domain }}</p>
-        {% else %}<a href="/auth/bitrix/connect/" class="text-sm text-brand-600">Connect Bitrix24</a>{% endif %}
-      </div>
-      {% endif %}
     </div>
   </div>
 

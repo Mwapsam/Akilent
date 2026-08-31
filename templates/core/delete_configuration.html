@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Delete Configuration{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="flex items-center gap-2 text-sm">
+    <a href="{% url 'core:configurations-list' %}"
+       class="text-gray-500 hover:text-gray-900 transition-colors">
+      Configurations
+    </a>
+
+    {% include "components/icon.html" with name="chevron-right" class="w-4 h-4 text-gray-400" %}
+
+    <span class="font-medium text-gray-900">
+      Delete
+    </span>
+  </div>
+{% endblock %}
+
+{% block page_header %}
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">
+      Delete configuration
+    </h1>
+
+    <p class="mt-1 text-sm text-gray-500">
+      This action cannot be undone.
+    </p>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class="max-w-2xl">
+    <div class="card p-6 sm:p-8">
+
+      <div class="flex gap-3 rounded-xl bg-red-50 border border-red-100 p-4 mb-6">
+        {% include "components/icon.html" with name="alert-triangle" class="w-5 h-5 text-red-500 shrink-0 mt-0.5" %}
+        <p class="text-sm text-red-700">
+          You're about to permanently delete this configuration. Any part of the
+          application relying on it will stop working until it's recreated.
+        </p>
+      </div>
+
+      <dl class="space-y-4 mb-6">
+        <div>
+          <dt class="label mb-0.5">Name</dt>
+          <dd class="text-sm text-gray-900">{{ configuration.name }}</dd>
+        </div>
+
+        <div>
+          <dt class="label mb-0.5">Value</dt>
+          <dd class="copy-value block whitespace-pre-line">{{ configuration.value }}</dd>
+        </div>
+      </dl>
+
+      <form method="post" class="flex justify-end gap-3 pt-5 border-t border-border">
+        {% csrf_token %}
+
+        <a href="{% url 'core:configurations-list' %}" class="btn btn-ghost">
+          Cancel
+        </a>
+
+        <button type="submit" class="btn btn-danger">
+          {% include "components/icon.html" with name="trash-2" class="w-4 h-4 shrink-0" %}
+          Delete configuration
+        </button>
+      </form>
+
+    </div>
+  </div>
+{% endblock %}

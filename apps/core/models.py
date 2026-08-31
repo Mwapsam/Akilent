@@ -1,8 +1,11 @@
 from django.db import models
 
+from apps.accounts.fields import EncryptedTextField
+
 class Configurations(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    value = models.TextField()
+    value = EncryptedTextField()
+    is_secret = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Configuration"
@@ -11,16 +14,21 @@ class Configurations(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def masked_value(self):
+        if self.is_secret:
+            return "••••••••"
+        val = str(self.value)
+        return val[:20] + "..." if len(val) > 20 else val
+
+
 class SiteSettings(models.Model):
     # Branding
     app_name = models.CharField(max_length=100, default="Automator")
     logo = models.ImageField(upload_to="branding/", blank=True, null=True)
     support_email = models.EmailField(blank=True, default="")
 
-    # Feature flags (UI layer). WhatsApp/Bitrix also require the matching env
-    # flag at boot to wire URLs/Celery — these can only further *disable* them.
     whatsapp_enabled = models.BooleanField(default=True)
-    bitrix_enabled = models.BooleanField(default=True)
     signups_enabled = models.BooleanField(default=True)
     payments_enabled = models.BooleanField(default=True)
 
@@ -75,7 +83,6 @@ class MailProviderSettings(models.Model):
         ("null", "Null (dev/test)"),
     ]
 
-    # Infrastructure provider (domain provisioning, DKIM, mailbox management if applicable)
     infra_backend = models.CharField(
         max_length=32,
         choices=BACKEND_CHOICES,

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Create Configuration{% endblock %}
+{% block title %}Edit Configuration{% endblock %}
 
 {% block breadcrumbs %}
   <div class="flex items-center gap-2 text-sm">
@@ -12,7 +12,7 @@
     {% include "components/icon.html" with name="chevron-right" class="w-4 h-4 text-gray-400" %}
 
     <span class="font-medium text-gray-900">
-      Create
+      Edit
     </span>
   </div>
 {% endblock %}
@@ -20,11 +20,11 @@
 {% block page_header %}
   <div class="mb-6">
     <h1 class="text-2xl font-semibold text-gray-900">
-      Create configuration
+      Edit configuration
     </h1>
 
     <p class="mt-1 text-sm text-gray-500">
-      Add a new configuration value.
+      Update <span class="font-medium text-gray-700">{{ configuration.name }}</span>.
     </p>
   </div>
 {% endblock %}
@@ -49,22 +49,14 @@
 
         {% for field in form %}
           <div>
-            {% if field.name == 'is_secret' %}
-              <div class="flex items-center gap-2">
-                {{ field }}
-                <label for="{{ field.id_for_label }}" class="text-sm text-gray-700">
-                  {{ field.label }}
-                </label>
-              </div>
-            {% else %}
-              <label for="{{ field.id_for_label }}" class="label">
-                {{ field.label }}
-                {% if field.field.required %}
-                  <span class="text-red-500">*</span>
-                {% endif %}
-              </label>
-              {{ field }}
-            {% endif %}
+            <label for="{{ field.id_for_label }}" class="label">
+              {{ field.label }}
+              {% if field.field.required %}
+                <span class="text-red-500">*</span>
+              {% endif %}
+            </label>
+
+            {{ field }}
 
             {% if field.help_text %}
               <p class="help">{{ field.help_text }}</p>
@@ -85,7 +77,7 @@
           </a>
 
           <button type="submit" class="btn btn-primary">
-            Create configuration
+            Save changes
           </button>
         </div>
       </form>

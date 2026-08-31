@@ -10,7 +10,7 @@ from django.conf import settings
 
 def get_state(account) -> dict:
     from apps.accounts.models import Invitation, Membership
-    from apps.email.models import EmailApiKey, EmailDomain, Mailbox
+    from apps.email.models import EmailApiKey, EmailDomain
 
     has_domain = EmailDomain.objects.filter(account=account).exists()
     has_verified = EmailDomain.objects.filter(
@@ -26,7 +26,6 @@ def get_state(account) -> dict:
         .first()
     )
     verify_url = f"/email/domains/#domain-card-{pending_domain.pk}" if pending_domain else "/email/domains/"
-    has_mailbox = Mailbox.objects.filter(account=account).exists()
     has_key = EmailApiKey.objects.filter(account=account, is_active=True).exists()
     has_team = (
         Membership.objects.filter(account=account).count() > 1
@@ -65,12 +64,6 @@ def get_state(account) -> dict:
             "desc": "Add the DNS records and run the DNS check to switch sending on.",
             "done": has_verified, "url": verify_url, "cta": "Verify DNS",
             "icon": "check-circle", "optional": False,
-        },
-        {
-            "key": "use", "title": "Create a mailbox or API key",
-            "desc": "Make your first mailbox, or generate an API key to send programmatically.",
-            "done": has_mailbox or has_key, "url": "/email/mailboxes/", "cta": "Create mailbox",
-            "icon": "inbox", "optional": False,
         },
         {
             "key": "team", "title": "Invite your team",

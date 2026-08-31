@@ -19,18 +19,8 @@ _ALIASES: dict[str, str] = {
 
 
 def get_whatsapp_provider(account) -> WhatsAppProvider:
-    """Return a WhatsAppProvider instance for the given account.
-
-    Args:
-        account: An apps.accounts.Account instance.
-
-    Returns:
-        A WhatsAppProvider implementation (currently MetaCloudAPIProvider).
-
-    Raises:
-        WhatsAppProviderError: if no active business number is configured.
-    """
     from apps.whatsapp.models import WhatsAppBusinessNumber
+    from apps.core.models import Configurations
 
     # Get the first active business number for this account
     number = WhatsAppBusinessNumber.objects.filter(
@@ -43,15 +33,23 @@ def get_whatsapp_provider(account) -> WhatsAppProvider:
             f"No active WhatsApp Business Number configured for account {account.slug}"
         )
 
-    if not number.access_token:
+    access_token = number.access_token
+
+    if not access_token:
+        # Fall back to a manually-entered credential in Configurations
+        access_token = (
+            Configurations.objects.filter(name="whatsapp_access_token")
+            .values_list("value", flat=True)
+            .first()
+        )
+
+    if not access_token:
         raise WhatsAppProviderError(
             f"Business number {number.phone_number_id} is missing access token"
         )
 
-    # Currently hardcoded to Meta; future versions could make this configurable
-    # via WHATSAPP_PROVIDER_BACKEND Django setting or database configuration
     return MetaCloudAPIProvider(
-        access_token=number.access_token,
+        access_token=access_token,
         phone_number_id=number.phone_number_id,
     )
 

@@ -48,9 +48,9 @@ Akilent is a digital communications and automation platform that enables busines
 
 ## Implementation
 
-This repository (`automator`) is a multi-tenant email-automation SaaS platform (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI) that implements the Akilent core services. The product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp and Bitrix verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
+This repository (`automator`) is a multi-tenant email-automation SaaS platform (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI) that implements the Akilent core services. The product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
 
-**Current Focus**: Close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp/Bitrix stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
+**Current Focus**: Close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
 
 
 # PRODUCTION

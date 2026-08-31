@@ -105,7 +105,6 @@ def settings_page(request):
         site.app_name = (request.POST.get("app_name") or "Automator").strip() or "Automator"
         site.support_email = (request.POST.get("support_email") or "").strip()
         site.whatsapp_enabled = "whatsapp_enabled" in request.POST
-        site.bitrix_enabled = "bitrix_enabled" in request.POST
         site.signups_enabled = "signups_enabled" in request.POST
         site.payments_enabled = "payments_enabled" in request.POST
         dp = request.POST.get("default_plan") or None
@@ -198,7 +197,7 @@ def create_configuration(request):
                 "Configuration created successfully.",
             )
 
-            return redirect("core:configurations")
+            return redirect("core:configurations-list")
 
     else:
         form = ConfigurationForm()
@@ -234,13 +233,11 @@ def edit_configuration(request, pk):
 
         if form.is_valid():
             form.save()
-
-            messages.success(
-                request,
-                "Configuration updated successfully.",
-            )
-
-            return redirect("core:configurations")
+            messages.success(request, "Configuration updated successfully.")
+            return redirect("core:configurations-list")
+        else:
+            # 👇 Call your helper here so the red borders show up
+            form.add_error_classes() 
 
     else:
         form = ConfigurationForm(instance=configuration)
@@ -267,7 +264,7 @@ def delete_configuration(request, pk):
             "Configuration deleted successfully.",
         )
 
-        return redirect("core:configurations")
+        return redirect("core:configurations-list")
 
     return render(
         request,

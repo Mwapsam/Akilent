@@ -261,7 +261,6 @@ def dashboard(request):
         pass
 
     subscription = getattr(account, "subscription", None)
-    bitrix_connection = getattr(account, "bitrix_connection", None)
 
     from apps.accounts import onboarding as ob
 
@@ -276,7 +275,6 @@ def dashboard(request):
             "numbers": numbers,
             "email_domains": email_domains,
             "subscription": subscription,
-            "bitrix_connection": bitrix_connection,
             "onboarding_complete": state["complete"],
             "onboarding_done": state["required_done"],
             "onboarding_total": state["required_total"],
@@ -291,7 +289,7 @@ def _email_stats(account, subscription):
     from django.db.models import Count, Q
     from django.utils import timezone
 
-    from apps.email.models import EmailDomain, EmailMessage, Mailbox
+    from apps.email.models import EmailDomain, EmailMessage
 
     month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -308,10 +306,6 @@ def _email_stats(account, subscription):
         total=Count("id"),
         verified=Count("id", filter=Q(status=EmailDomain.Status.VERIFIED)),
     )
-    mailboxes = Mailbox.objects.filter(account=account).aggregate(
-        total=Count("id"),
-        active=Count("id", filter=Q(status=Mailbox.Status.ACTIVE)),
-    )
 
     emails_used = month["sent"] + month["failed"] + month["queued"]
     email_quota = getattr(getattr(subscription, "plan", None), "max_emails_per_month", None)
@@ -326,8 +320,6 @@ def _email_stats(account, subscription):
         "failed_sub": f"{month['failed']} failed this month",
         "domains_verified": domains["verified"],
         "domains_sub": f"of {domains['total']} total",
-        "mailboxes_active": mailboxes["active"],
-        "mailboxes_sub": f"of {mailboxes['total']} total",
         "emails_used": emails_used,
         "email_quota": email_quota,
         "usage_pct": usage_pct,

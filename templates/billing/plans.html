@@ -268,7 +268,7 @@
           {{ plan.log_retention_days }} day{{ plan.log_retention_days|pluralize }} log retention
         </li>
         {% endif %}
-        {% if WHATSAPP_ENABLED or BITRIX_ENABLED %}
+        {% if WHATSAPP_ENABLED %}
         <li class="flex items-start gap-2">
           <svg class="w-4 h-4 text-green-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
           {% if plan.max_automation_rules == -1 %}Unlimited automation rules

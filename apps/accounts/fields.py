@@ -1,9 +1,3 @@
-"""Shared field-level encryption used across tenants, WhatsApp, email and Bitrix.
-
-Previously this lived in ``apps.whatsapp.models.account``; it was moved here so
-that every app (accounts, whatsapp, email, bitrix) can store secrets at rest
-without importing from the WhatsApp app.
-"""
 
 from cryptography.fernet import Fernet, MultiFernet
 from django.conf import settings

@@ -21,9 +21,9 @@
       </p>
     </div>
 
-    <a href="{% url 'core:create_configuration' %}"
-       class="btn-primary inline-flex items-center gap-2">
-      {% include "components/icon.html" with name="plus" class="w-4 h-4" %}
+    <a href="{% url 'core:create-configuration' %}"
+       class="btn btn-primary inline-flex items-center gap-2">
+      {% include "components/icon.html" with name="plus" %}
       <span>New configuration</span>
     </a>
   </div>
@@ -60,21 +60,27 @@
                 </td>
 
                 <td class="px-6 py-4">
-                  <span class="text-gray-600 break-all">
-                    {{ configuration.value }}
-                  </span>
+                <span class="text-gray-600 break-all font-mono text-xs">
+                    {% if configuration.is_secret %}
+                    {# Mask the value so it doesn't show plaintext in the UI #}
+                    ••••••••••••••••
+                    {% else %}
+                    {# If it's not a secret, show a truncated version of the plaintext #}
+                    {{ configuration.value|truncatechars:60 }}
+                    {% endif %}
+                </span>
                 </td>
 
                 <td class="px-6 py-4 text-right">
                   <div class="flex justify-end gap-2">
 
-                    <a href="{% url 'core:edit_configuration' configuration.pk %}"
+                    <a href="{% url 'core:edit-configuration' configuration.pk %}"
                        class="btn-ghost">
                       Edit
                     </a>
 
                     <form method="post"
-                          action="{% url 'core:delete_configuration' configuration.pk %}"
+                          action="{% url 'core:delete-configuration' configuration.pk %}"
                           class="inline"
                           onsubmit="return confirm('Delete this configuration?');">
                       {% csrf_token %}
@@ -111,8 +117,8 @@
         </p>
 
         <div class="mt-5">
-          <a href="{% url 'core:create_configuration' %}"
-             class="btn-primary">
+          <a href="{% url 'core:create-configuration' %}"
+             class="btn btn-primary">
             Create configuration
           </a>
         </div>
