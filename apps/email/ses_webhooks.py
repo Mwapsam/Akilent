@@ -3,154 +3,282 @@
 Handles bounce/complaint/delivery notifications from SES via SNS. Verifies SNS
 message signatures and updates the suppression list / email message status.
 """
+from __future__ import annotations
+
+import base64
+import hashlib
 import json
 import logging
+import re
 from typing import Any
+from urllib.parse import urlparse
 
-from django.conf import settings
+import requests
+from cryptography import x509
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 logger = logging.getLogger(__name__)
 
+# Allowed SNS topic ARNs for this webhook. Must be non-empty in production.
+# Example: {"arn:aws:sns:us-east-1:123456789012:ses-events"}
+ALLOWED_SNS_TOPIC_ARNS: set[str] = set()  # populate from settings in real apps
+
+# AWS SNS signing certs and SubscribeURLs are always hosted on a
+# sns.<region>.amazonaws.com (or .amazonaws.com.cn) host.
+_SNS_HOST_RE = re.compile(
+    r"^sns\.[a-z0-9-]{3,}\.amazonaws\.com(\.cn)?$",
+    re.IGNORECASE,
+)
+
+# SNS signing certificates use a fixed path pattern.
+_SNS_CERT_PATH_RE = re.compile(
+    r"^/SimpleNotificationService-[a-f0-9]+\.pem$",
+    re.IGNORECASE,
+)
+
+# How long to remember processed SNS MessageIds (idempotency). SNS can retry
+# for hours; 7 days is a safe window for most setups.
+_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _is_valid_sns_url(url: str, *, require_cert_path: bool = False) -> bool:
+    """Validate that a URL is an HTTPS SNS endpoint we are willing to fetch."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+
+    if parsed.scheme != "https":
+        return False
+
+    hostname = (parsed.hostname or "").lower()
+    if not _SNS_HOST_RE.match(hostname):
+        return False
+
+    if require_cert_path:
+        path = parsed.path or ""
+        if not _SNS_CERT_PATH_RE.match(path):
+            return False
+
+    return True
+
 
 def _verify_sns_signature(message: dict[str, Any]) -> bool:
-    """Verify SNS message signature to prevent spoofing.
-
-    Implements AWS SNS signature verification as per:
-    https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message.html
-    """
+    """Verify SNS message signature (SignatureVersion 1 = SHA1, 2 = SHA256)."""
     try:
-        import boto3
-        from botocore.exceptions import ClientError
-
-        # Extract signature fields from message
         signature = message.get("Signature", "")
-        cert_url = message.get("SigningCertUrl", "")
+        cert_url = message.get("SigningCertURL") or message.get("SigningCertUrl") or ""
 
         if not signature or not cert_url:
-            logger.warning("SNS message missing Signature or SigningCertUrl")
+            logger.warning("SNS message missing Signature or SigningCertURL")
             return False
 
-        # Download and cache the certificate (in production, this should be cached)
-        import requests
-        try:
-            cert_response = requests.get(cert_url, timeout=5)
-            cert_response.raise_for_status()
-            cert_content = cert_response.text
-        except Exception as e:
-            logger.error(f"Failed to fetch SNS signing certificate: {e}")
+        if not _is_valid_sns_url(cert_url, require_cert_path=True):
+            logger.warning("Rejecting SigningCertURL with untrusted host/path: %s", cert_url)
             return False
 
-        # Build the string to sign (order matters)
-        if message.get("Type") == "Notification":
-            fields_to_sign = ["Message", "MessageId", "Subject", "Timestamp", "TopicArn", "Type"]
+        signature_version = str(message.get("SignatureVersion", "1"))
+        if signature_version not in ("1", "2"):
+            logger.warning("Unsupported SNS SignatureVersion: %s", signature_version)
+            return False
+
+        hash_algo = hashes.SHA1() if signature_version == "1" else hashes.SHA256()
+
+        cache_key = f"sns_cert_{hashlib.sha256(cert_url.encode()).hexdigest()}"
+        cert_content = cache.get(cache_key)
+
+        if not cert_content:
+            try:
+                cert_response = requests.get(
+                    cert_url,
+                    timeout=5,
+                    allow_redirects=False,
+                )
+                cert_response.raise_for_status()
+                cert_content = cert_response.text
+                cache.set(cache_key, cert_content, 86400)
+            except Exception as e:
+                logger.error("Failed to fetch SNS signing certificate: %s", e)
+                return False
+
+        msg_type = message.get("Type")
+        if msg_type == "Notification":
+            fields_to_sign = [
+                "Message",
+                "MessageId",
+                "Subject",
+                "Timestamp",
+                "TopicArn",
+                "Type",
+            ]
         else:
-            fields_to_sign = ["Message", "MessageId", "SubscribeURL", "Timestamp", "Token", "TopicArn", "Type"]
+            fields_to_sign = [
+                "Message",
+                "MessageId",
+                "SubscribeURL",
+                "Timestamp",
+                "Token",
+                "TopicArn",
+                "Type",
+            ]
 
         string_to_sign = "".join(
-            f"{field}\n{message.get(field, '')}\n"
+            f"{field}\n{message[field]}\n"
             for field in fields_to_sign
             if field in message
         )
 
-        # Verify signature with certificate
-        import ssl
-        import hashlib
-        import base64
-        from cryptography import x509
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import hashes, serialization
-
         try:
-            # Load certificate
             cert_obj = x509.load_pem_x509_certificate(
-                cert_content.encode(), default_backend()
+                cert_content.encode("utf-8"),
+                default_backend(),
             )
             public_key = cert_obj.public_key()
-
-            # Decode signature
             signature_bytes = base64.b64decode(signature)
 
-            # Verify
             public_key.verify(
                 signature_bytes,
                 string_to_sign.encode("utf-8"),
-                padding=None,  # type: ignore
-                algorithm=hashes.SHA256(),
+                asym_padding.PKCS1v15(),
+                hash_algo,
             )
             return True
-        except Exception as e:
-            logger.warning(f"SNS signature verification failed: {e}")
+        except InvalidSignature:
+            logger.warning("SNS signature verification failed: signature mismatch")
             return False
-    except ImportError:
-        logger.error("cryptography library not installed")
+        except Exception as e:
+            logger.warning("SNS signature verification failed: %s", e)
+            return False
+    except Exception as e:
+        logger.error("Unexpected error during SNS signature verification: %s", e)
         return False
+
+
+def _already_processed(sns_message_id: str) -> bool:
+    """Return True if this SNS MessageId was already handled (cache-backed)."""
+    if not sns_message_id:
+        return False
+    key = f"sns_processed_{sns_message_id}"
+    return cache.get(key) is not None
+
+
+def _mark_processed(sns_message_id: str) -> None:
+    if not sns_message_id:
+        return
+    key = f"sns_processed_{sns_message_id}"
+    cache.set(key, "1", _IDEMPOTENCY_TTL_SECONDS)
 
 
 @csrf_exempt
 @require_POST
 def ses_sns_webhook(request):
-    """Handle SNS messages from SES (bounces, complaints, deliveries).
-
-    AWS SNS sends a POST request with the JSON payload. This view verifies
-    the signature, extracts event details, and updates the suppression list.
-    """
+    """Handle SNS messages from SES (bounces, complaints, deliveries)."""
     try:
         message_data = json.loads(request.body)
     except json.JSONDecodeError:
         logger.warning("Invalid JSON in SNS webhook")
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # Verify SNS signature
     if not _verify_sns_signature(message_data):
         logger.warning("SNS signature verification failed")
         return JsonResponse({"error": "Signature verification failed"}, status=403)
 
-    # Handle subscription confirmation
+    topic_arn = message_data.get("TopicArn")
+    if not ALLOWED_SNS_TOPIC_ARNS:
+        logger.error("ALLOWED_SNS_TOPIC_ARNS is empty; refusing to process SNS messages")
+        return JsonResponse({"error": "Webhook not configured"}, status=503)
+    if not topic_arn or topic_arn not in ALLOWED_SNS_TOPIC_ARNS:
+        logger.warning("Rejecting unexpected or missing SNS TopicArn: %s", topic_arn)
+        return JsonResponse({"error": "Unexpected TopicArn"}, status=403)
+
+    sns_message_id = message_data.get("MessageId") or ""
+
+    # Subscription confirmation (no SES payload; still verify + confirm once)
     if message_data.get("Type") == "SubscriptionConfirmation":
-        logger.info(f"SNS SubscriptionConfirmation: {message_data.get('SubscribeURL')}")
-        # In production, you would call SubscribeURL to confirm the subscription
+        subscribe_url = message_data.get("SubscribeURL")
+        if not subscribe_url or not _is_valid_sns_url(subscribe_url):
+            logger.warning("Rejecting SubscribeURL with untrusted host: %s", subscribe_url)
+            return JsonResponse({"error": "Invalid SubscribeURL"}, status=400)
+
+        if _already_processed(sns_message_id):
+            logger.info("Duplicate SubscriptionConfirmation MessageId=%s; ignoring", sns_message_id)
+            return HttpResponse("OK")
+
+        logger.info("SNS SubscriptionConfirmation: %s", subscribe_url)
+        try:
+            resp = requests.get(subscribe_url, timeout=5, allow_redirects=False)
+            resp.raise_for_status()
+            _mark_processed(sns_message_id)
+            logger.info("Successfully confirmed SNS subscription")
+        except Exception as e:
+            logger.error("Failed to confirm SNS subscription: %s", e)
+            # Do not mark processed so SNS can retry confirmation.
         return HttpResponse("OK")
 
-    # Handle notifications
     if message_data.get("Type") != "Notification":
-        logger.warning(f"Unknown SNS message type: {message_data.get('Type')}")
+        logger.warning("Unknown SNS message type: %s", message_data.get("Type"))
         return HttpResponse("OK")
 
-    # Parse the SES event from the SNS message
+    # Durable-enough idempotency for notifications (cache; see note below for DB)
+    if _already_processed(sns_message_id):
+        logger.info("Duplicate SNS Notification MessageId=%s; acknowledging", sns_message_id)
+        return HttpResponse("OK")
+
     try:
         ses_message = json.loads(message_data.get("Message", "{}"))
     except json.JSONDecodeError:
         logger.warning("Invalid JSON in SNS Message field")
+        # Acknowledge so SNS does not retry forever on malformed payload.
+        _mark_processed(sns_message_id)
         return HttpResponse("OK")
 
     event_type = ses_message.get("eventType")
 
-    if event_type == "Bounce":
-        _handle_bounce(ses_message)
-    elif event_type == "Complaint":
-        _handle_complaint(ses_message)
-    elif event_type == "Delivery":
-        _handle_delivery(ses_message)
-    else:
-        logger.debug(f"Ignoring SES event type: {event_type}")
+    try:
+        if event_type == "Bounce":
+            _handle_bounce(ses_message)
+        elif event_type == "Complaint":
+            _handle_complaint(ses_message)
+        elif event_type == "Delivery":
+            _handle_delivery(ses_message)
+        else:
+            logger.debug("Ignoring SES event type: %s", event_type)
+    except Exception:
+        # Let SNS retry on unexpected handler failures; do not mark processed.
+        logger.exception("Error handling SES event type=%s", event_type)
+        return JsonResponse({"error": "Processing failed"}, status=500)
 
+    _mark_processed(sns_message_id)
     return HttpResponse("OK")
 
 
 def _handle_bounce(ses_message: dict[str, Any]) -> None:
-    """Process SES bounce notification."""
     from apps.email.models import SuppressionListEntry
 
     bounce = ses_message.get("bounce", {})
-    bounce_type = bounce.get("bounceType", "Permanent")  # Permanent, Transient, Undetermined
+    bounce_type = bounce.get("bounceType", "Undetermined")
     recipients = bounce.get("bouncedRecipients", [])
 
-    # Only suppress on Permanent bounces
     if bounce_type != "Permanent":
-        logger.debug(f"Ignoring {bounce_type} bounce")
+        logger.debug("Ignoring %s bounce", bounce_type)
+        return
+
+    message_id = ses_message.get("mail", {}).get("messageId")
+    account = _find_account_for_message(message_id)
+    if not account:
+        # Acknowledge at the webhook layer; we cannot suppress without an account.
+        logger.warning(
+            "No EmailMessage for SES messageId=%s; cannot suppress bounce recipients",
+            message_id,
+        )
         return
 
     for recipient in recipients:
@@ -158,66 +286,76 @@ def _handle_bounce(ses_message: dict[str, Any]) -> None:
         if not email:
             continue
 
-        # Find the account that sent this email (via SES message ID if available)
-        message_id = ses_message.get("mail", {}).get("messageId")
-        account = _find_account_for_message(message_id)
-
-        if not account:
-            logger.warning(f"Could not find account for bounced email {email}")
-            continue
-
-        # Create or update suppression entry
         SuppressionListEntry.objects.get_or_create(
             account=account,
             email=email,
             defaults={
                 "reason": SuppressionListEntry.Reason.BOUNCE,
                 "bounce_type": bounce_type,
-            }
+            },
         )
-        logger.info(f"Added {email} to suppression list (bounce)")
+        logger.info("Added %s to suppression list (bounce)", email)
 
 
 def _handle_complaint(ses_message: dict[str, Any]) -> None:
-    """Process SES complaint notification."""
     from apps.email.models import SuppressionListEntry
 
     complaint = ses_message.get("complaint", {})
     recipients = complaint.get("complainedRecipients", [])
+
+    message_id = ses_message.get("mail", {}).get("messageId")
+    account = _find_account_for_message(message_id)
+    if not account:
+        logger.warning(
+            "No EmailMessage for SES messageId=%s; cannot suppress complaint recipients",
+            message_id,
+        )
+        return
 
     for recipient in recipients:
         email = recipient.get("emailAddress")
         if not email:
             continue
 
-        message_id = ses_message.get("mail", {}).get("messageId")
-        account = _find_account_for_message(message_id)
-
-        if not account:
-            logger.warning(f"Could not find account for complained email {email}")
-            continue
-
-        # Create or update suppression entry
         SuppressionListEntry.objects.get_or_create(
             account=account,
             email=email,
             defaults={
                 "reason": SuppressionListEntry.Reason.COMPLAINT,
-            }
+            },
         )
-        logger.info(f"Added {email} to suppression list (complaint)")
+        logger.info("Added %s to suppression list (complaint)", email)
 
 
 def _handle_delivery(ses_message: dict[str, Any]) -> None:
-    """Process SES delivery notification (currently just logs)."""
+    """Mark the corresponding EmailMessage as delivered when possible."""
+    from apps.email.models import EmailMessage
+
     mail = ses_message.get("mail", {})
     message_id = mail.get("messageId")
     destination = mail.get("destination", [])
-    logger.debug(f"SES delivery notification for {message_id}: {destination}")
+
+    if not message_id:
+        logger.warning("Delivery notification missing mail.messageId")
+        return
+
+    updated = EmailMessage.objects.filter(provider_message_id=message_id).update(
+        # Adjust field/status names to match your model.
+        status=getattr(EmailMessage, "Status", type("S", (), {"DELIVERED": "delivered"})).DELIVERED
+        if hasattr(EmailMessage, "Status")
+        else "delivered",
+    )
+    if updated:
+        logger.info("Marked EmailMessage provider_message_id=%s as delivered", message_id)
+    else:
+        logger.warning(
+            "No EmailMessage for SES messageId=%s (delivery to %s); acknowledging without update",
+            message_id,
+            destination,
+        )
 
 
 def _find_account_for_message(message_id: str | None):
-    """Look up the account that sent a message by its SES message ID."""
     if not message_id:
         return None
 

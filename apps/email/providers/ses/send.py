@@ -26,31 +26,51 @@ logger = logging.getLogger(__name__)
 class SesSendProvider(EmailSendProvider):
     """Send provider using AWS SES v2 API."""
 
-    def __init__(self):
-        """Initialize SES client with credentials from environment/IAM role."""
+    def __init__(self) -> None:
         region = os.getenv("AWS_REGION", "us-east-1")
         self.client: SESv2Client = boto3.client("sesv2", region_name=region)
+        self.configuration_set: str | None = None
 
-        # Configuration set for tracking (optional but recommended)
         from apps.core.models import MailProviderSettings
+
         try:
             settings = MailProviderSettings.load()
             self.configuration_set = settings.ses_configuration_set or None
         except Exception:
-            self.configuration_set = None
+            logger.exception("Failed to load MailProviderSettings; SES sends will omit ConfigurationSetName")
+            return
+
+        if self.configuration_set:
+            self._ensure_configuration_set()
+
+
+    def _ensure_configuration_set(self) -> None:
+        try:
+            self.client.get_configuration_set(ConfigurationSetName=self.configuration_set)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code == "NotFoundException":
+                logger.error(
+                    "SES configuration set %r is configured but does not exist. "
+                    "Create it (and event destinations) in infra; not creating from app.",
+                    self.configuration_set,
+                )
+                # Option A: disable tracking for this process
+                self.configuration_set = None
+                # Option B: raise and fail startup if tracking is mandatory
+                # raise EmailProviderError(...)
+            else:
+                logger.exception(
+                    "Error checking SES configuration set %r", self.configuration_set
+                )
 
     def send(self, message: OutboundEmail) -> SendResult:
-        """Deliver `message` via AWS SES. Raises EmailProviderError on failure.
+        if not message.html_body and not message.text_body:
+            raise EmailProviderError(
+                f"Cannot send message to={message.to_email!r}: "
+                "neither html_body nor text_body is set"
+            )
 
-        Args:
-            message: OutboundEmail with from_email, to_email, subject, text_body, html_body
-
-        Returns:
-            SendResult with success=True and provider_message_id from SES
-
-        Raises:
-            EmailProviderError: On unrecoverable boto3 errors
-        """
         try:
             params = {
                 "FromEmailAddress": message.from_email,
@@ -109,8 +129,7 @@ class SesSendProvider(EmailSendProvider):
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             error_msg = exc.response.get("Error", {}).get("Message", str(exc))
 
-            # Determine if this is retryable
-            retryable_codes = {"Throttling", "ServiceUnavailable"}
+            retryable_codes = {"TooManyRequestsException", "LimitExceededException"}
             if error_code in retryable_codes:
                 logger.warning(
                     "SES send retryable error: %s - %s (to=%s)",

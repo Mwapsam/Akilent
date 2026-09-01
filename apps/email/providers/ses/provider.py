@@ -1,8 +1,10 @@
 """AWS SES mail infrastructure provider — manages domain identities and DKIM.
 
 This provider uses AWS SES EmailIdentity API to manage domain verification and
-DKIM setup. Unlike Stalwart which uses TXT records, SES uses CNAME records for
-Easy DKIM.
+DKIM setup. Unlike providers that use TXT records, SES Easy DKIM uses CNAME
+records of the form:
+
+    {token}._domainkey.{domain}  CNAME  {token}.dkim.amazonses.com
 """
 from __future__ import annotations
 
@@ -16,7 +18,6 @@ from botocore.exceptions import ClientError
 from apps.email.exceptions import EmailProviderError
 from apps.email.types import (
     DkimRecord,
-    DomainInfo,
     OperationResult,
 )
 
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 class SesProvider(EmailProvider):
     """Mail provider using AWS SES email identity and Easy DKIM."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize SES client with credentials from environment/IAM role."""
         region = os.getenv("AWS_REGION", "us-east-1")
         self.client: SESv2Client = boto3.client("sesv2", region_name=region)
@@ -39,18 +40,14 @@ class SesProvider(EmailProvider):
     # ── Domain management ──────────────────────────────────────────────────────
 
     def create_domain(self, domain: str) -> OperationResult:
-        """Create a new email identity for a domain in SES.
-
-        SES doesn't create mailboxes, so this is really just registering the
-        domain as a sending identity. DKIM is enabled by default with Easy DKIM.
-        """
+        """Register a domain as a sending identity in SES (Easy DKIM enabled)."""
         try:
-            # Create the email identity (domain-level)
+            # EmailIdentity must be the bare domain, not an address like
+            # "noreply@domain". Address identities use email confirmation,
+            # not DNS/DKIM.
             self.client.create_email_identity(
-                EmailAddress=f"noreply@{domain}",  # Placeholder; SES treats it as domain identity
-                Tags=[
-                    {"Name": "Source", "Value": "Automator"},
-                ],
+                EmailIdentity=domain,
+                Tags=[{"Key": "Source", "Value": "Automator"}],
             )
             logger.info("SES domain identity created: %s", domain)
             return OperationResult(success=True)
@@ -58,74 +55,108 @@ class SesProvider(EmailProvider):
             if exc.response["Error"]["Code"] == "AlreadyExistsException":
                 logger.info("SES domain identity already exists: %s", domain)
                 return OperationResult(success=True)
-            logger.error("Failed to create SES domain identity: %s", exc)
-            raise EmailProviderError(f"Failed to create domain identity: {exc}") from exc
+            logger.exception("Failed to create SES domain identity: %s", domain)
+            raise EmailProviderError(
+                f"Failed to create domain identity: {exc}"
+            ) from exc
         except Exception as exc:
-            logger.error("Unexpected error creating SES domain identity: %s", exc)
+            logger.exception("Unexpected error creating SES domain identity: %s", domain)
             raise EmailProviderError(str(exc)) from exc
 
     def verify_domain(self, domain: str) -> OperationResult:
-        """SES doesn't require explicit verification; identity is auto-verified upon creation.
-
-        However, DKIM must be verified via DNS. This returns success to match the interface.
-        """
-        return OperationResult(success=True)
-
-    def get_dkim(self, domain: str, *, selector: str = "dkim") -> DkimRecord | None:
-        """Fetch DKIM record details from SES for Easy DKIM.
-
-        SES provides CNAME records (not TXT like Stalwart). Returns None if not found.
-        """
+        """Return success when SES reports VerificationStatus == SUCCESS."""
         try:
-            response = self.client.get_email_identity(EmailAddress=domain)
-            identity_attrs = response.get("Attributes", {})
+            response = self.client.get_email_identity(EmailIdentity=domain)
+            # SESv2: VerificationStatus is top-level (not under Attributes).
+            status = response.get("VerificationStatus")
 
-            # Easy DKIM tokens from SES
-            dkim_tokens = identity_attrs.get("DkimTokens", [])
-            if not dkim_tokens:
-                logger.warning("No DKIM tokens found for SES domain: %s", domain)
-                return None
+            if status == "SUCCESS":
+                return OperationResult(success=True)
 
-            # SES uses CNAME format: token.dkim.amazonses.com -> token.dkim.amazonses.com (CNAME)
-            # Construct the record name and value for the first token
-            token = dkim_tokens[0]
-            cname_name = f"{token}._domainkey.{domain}"
-            cname_value = f"{token}.dkim.amazonses.com"
-
-            logger.info("SES DKIM record for %s: %s -> %s", domain, cname_name, cname_value)
-
-            return DkimRecord(
-                selector="amazonses",  # SES-specific selector
-                public_key=cname_value,  # Store CNAME target as "public_key" field
-                is_cname=True,  # Flag to indicate this is a CNAME, not TXT
-            )
-
+            logger.info("SES domain verification status for %s: %s", domain, status)
+            return OperationResult(success=False)
         except ClientError as exc:
             if exc.response["Error"]["Code"] == "NotFoundException":
-                logger.warning("SES domain not found: %s", domain)
-                return None
-            logger.error("Failed to fetch SES DKIM: %s", exc)
-            raise EmailProviderError(f"Failed to fetch DKIM: {exc}") from exc
+                logger.info("SES domain not found for verification: %s", domain)
+                return OperationResult(success=False)
+            logger.exception("Failed to verify SES domain: %s", domain)
+            raise EmailProviderError(f"Failed to verify domain: {exc}") from exc
         except Exception as exc:
-            logger.error("Unexpected error fetching SES DKIM: %s", exc)
+            logger.exception("Unexpected error verifying SES domain: %s", domain)
             raise EmailProviderError(str(exc)) from exc
 
-    def delete_domain(self, domain: str) -> OperationResult:
-        """Delete an email identity from SES."""
+    def get_dkim_records(self, domain: str) -> list[DkimRecord]:
         try:
-            self.client.delete_email_identity(EmailAddress=domain)
+            response = self.client.get_email_identity(EmailIdentity=domain)
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "NotFoundException":
+                logger.info("SES identity not found for domain=%s", domain)
+                return []
+            logger.exception("SES get_email_identity failed for domain=%s", domain)
+            raise EmailProviderError(
+                f"Failed to get DKIM records for {domain}: {exc}"
+            ) from exc
+        except Exception as exc:
+            logger.exception("Unexpected error getting DKIM records for %s", domain)
+            raise EmailProviderError(str(exc)) from exc
+
+        tokens = (response.get("DkimAttributes") or {}).get("Tokens") or []
+        records: list[DkimRecord] = []
+        for token in tokens:
+            cname_name = f"{token}._domainkey.{domain}"
+            cname_value = f"{token}.dkim.amazonses.com"
+            # selector = token so callers that build
+            # f"{selector}._domainkey.{domain}" get the correct name.
+            # Include name= only if DkimRecord defines that field.
+            records.append(
+                DkimRecord(
+                    selector=token,
+                    public_key=cname_value,
+                    is_cname=True,
+                    # Uncomment if your DkimRecord supports it:
+                    # name=cname_name,
+                )
+            )
+            logger.debug(
+                "SES DKIM CNAME for %s: %s -> %s", domain, cname_name, cname_value
+            )
+        return records
+
+    def get_dkim(self, domain: str, selector: str | None = None) -> DkimRecord | None:
+        """Compatibility helper — prefer get_dkim_records() and publish all three.
+
+        ``selector`` is ignored for Easy DKIM (SES assigns the tokens).
+        """
+        if selector is not None:
+            logger.warning(
+                "SesProvider.get_dkim(selector=...) is ignored; "
+                "Easy DKIM selectors are SES-assigned tokens. "
+                "Use get_dkim_records() and publish all three CNAMEs."
+            )
+        records = self.get_dkim_records(domain)
+        if not records:
+            return None
+        if len(records) > 1:
+            logger.warning(
+                "SesProvider.get_dkim() returning only the first of %d DKIM "
+                "records for domain=%s; callers must use get_dkim_records()",
+                len(records),
+                domain,
+            )
+        return records[0]
+
+    def delete_domain(self, domain: str) -> OperationResult:
+        """Delete an email identity from SES (idempotent if already gone)."""
+        try:
+            self.client.delete_email_identity(EmailIdentity=domain)
             logger.info("SES domain identity deleted: %s", domain)
             return OperationResult(success=True)
         except ClientError as exc:
             if exc.response["Error"]["Code"] == "NotFoundException":
                 logger.info("SES domain not found (already deleted): %s", domain)
                 return OperationResult(success=True)
-            logger.error("Failed to delete SES domain: %s", exc)
+            logger.exception("Failed to delete SES domain: %s", domain)
             raise EmailProviderError(f"Failed to delete domain: {exc}") from exc
         except Exception as exc:
-            logger.error("Unexpected error deleting SES domain: %s", exc)
+            logger.exception("Unexpected error deleting SES domain: %s", domain)
             raise EmailProviderError(str(exc)) from exc
-
-    # ── Unsupported operations (mailbox/alias/relay) ────────────────────────────
-    # These are no longer part of the EmailProvider interface, so they're removed.
-    # See apps.email.models.EmailDomain.dns_records() for how to handle CNAME vs TXT display.
