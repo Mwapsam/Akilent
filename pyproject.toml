@@ -45,4 +45,5 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "automator.settings_test"
 python_files = ["test_*.py", "tests.py", "*_test.py"]
-addopts = "-q"
+testpaths = ["apps"]
+addopts = "-q --import-mode=importlib"

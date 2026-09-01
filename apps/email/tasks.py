@@ -43,6 +43,7 @@ _RETRY_DELAY_BASE = 2  # seconds (exponential base)
 _RETRY_DELAY_MULTIPLIER = 2  # exponential growth
 
 _WEBHOOK_MAX_RETRIES = 6
+_WEBHOOK_RETRY_DELAY_BASE = 10  # seconds (webhook retry base, longer than email)
 _WEBHOOK_TIMEOUT_SECONDS = 10
 
 _CAMPAIGN_CHUNK_SIZE = 500
@@ -65,7 +66,7 @@ def _exponential_backoff_delay(retry_count: int, base: int = _RETRY_DELAY_BASE, 
 @shared_task(
     bind=True,
     max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
+    default_retry_delay=_RETRY_DELAY_BASE,
     queue="email",
 )
 def provision_domain_async(
@@ -184,7 +185,7 @@ def _maybe_complete_campaign(campaign: BulkEmailCampaign) -> None:
 @shared_task(
     bind=True,
     max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
+    default_retry_delay=_RETRY_DELAY_BASE,
     queue="outbound",
 )
 def send_email(
@@ -208,7 +209,7 @@ def send_email(
 @shared_task(
     bind=True,
     max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
+    default_retry_delay=_RETRY_DELAY_BASE,
     queue="outbound",
 )
 def send_bulk_recipient_email(self, email_message_id: int) -> None:
@@ -269,7 +270,7 @@ def send_bulk_recipient_email(self, email_message_id: int) -> None:
 @shared_task(
     bind=True,
     max_retries=_MAX_RETRIES,
-    default_retry_delay=_RETRY_DELAY,
+    default_retry_delay=_RETRY_DELAY_BASE,
     queue="campaigns",
 )
 def dispatch_campaign(self, campaign_id: int) -> None:
@@ -444,7 +445,7 @@ def deliver_webhook(self, delivery_id: int) -> None:
                 delivery_id, delivery.event_type, exc,
             )
             return
-        countdown = _RETRY_DELAY * (2 ** self.request.retries)
+        countdown = _exponential_backoff_delay(self.request.retries, base=_WEBHOOK_RETRY_DELAY_BASE, multiplier=_RETRY_DELAY_MULTIPLIER)
         raise self.retry(exc=exc, countdown=countdown)
 
 
