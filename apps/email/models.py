@@ -187,8 +187,21 @@ class EmailDomain(models.Model):
 
     @property
     def spf_value(self) -> str:
-        host = settings.EMAIL_HOST or "YOUR_MAIL_HOST"
-        return f"v=spf1 include:{host} ~all"
+        from apps.core.models import MailProviderSettings
+
+        try:
+            mail_settings = MailProviderSettings.load()
+            # For SES, use Amazon's SES mail server (region-specific)
+            if mail_settings.infra_backend == "ses" or mail_settings.send_backend == "ses":
+                region = mail_settings.aws_region or "us-east-1"
+                # SES mail server endpoint for SPF (sendmail.region.amazonses.com)
+                return f"v=spf1 include:amazonses.com ~all"
+            # For Stalwart or other backends, use the configured SMTP host
+            host = settings.EMAIL_HOST or "YOUR_MAIL_HOST"
+            return f"v=spf1 include:{host} ~all"
+        except Exception:
+            host = settings.EMAIL_HOST or "YOUR_MAIL_HOST"
+            return f"v=spf1 include:{host} ~all"
 
     @property
     def dmarc_value(self) -> str:
@@ -598,6 +611,7 @@ class EmailMessage(models.Model):
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
         SENT = "sent", "Sent"
+        DELIVERED = "delivered", "Delivered"
         FAILED = "failed", "Failed"
 
     account = models.ForeignKey(
@@ -697,6 +711,39 @@ class EmailTrackingToken(models.Model):
     def __str__(self):
         kind = "click" if self.url else "open"
         return f"{kind} token for {self.message_id}"
+
+
+class UnsubscribeToken(models.Model):
+    """One-time token for secure unsubscribe links.
+
+    Recipient clicks the unsubscribe link with this token, which gets added to
+    the suppression list. Tokens are opaque (no internal DB IDs exposed).
+    """
+
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    account = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="unsubscribe_tokens"
+    )
+    email = models.EmailField()
+    campaign = models.ForeignKey(
+        BulkEmailCampaign,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="unsubscribe_tokens",
+    )
+    is_used = models.BooleanField(default=False)
+    used_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["account", "email"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Unsubscribe for {self.email}"
 
 
 class WebhookEndpoint(models.Model):

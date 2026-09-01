@@ -34,7 +34,16 @@ class SesProvider(EmailProvider):
 
     def __init__(self) -> None:
         """Initialize SES client with credentials from environment/IAM role."""
-        region = os.getenv("AWS_REGION", "us-east-1")
+        from apps.core.models import MailProviderSettings
+
+        region = "us-east-1"
+        try:
+            settings = MailProviderSettings.load()
+            region = settings.aws_region or os.getenv("AWS_REGION", "us-east-1")
+        except Exception:
+            logger.debug("Failed to load MailProviderSettings; falling back to env/defaults")
+            region = os.getenv("AWS_REGION", "us-east-1")
+
         self.client: SESv2Client = boto3.client("sesv2", region_name=region)
 
     # ── Domain management ──────────────────────────────────────────────────────

@@ -27,18 +27,21 @@ class SesSendProvider(EmailSendProvider):
     """Send provider using AWS SES v2 API."""
 
     def __init__(self) -> None:
-        region = os.getenv("AWS_REGION", "us-east-1")
-        self.client: SESv2Client = boto3.client("sesv2", region_name=region)
-        self.configuration_set: str | None = None
-
         from apps.core.models import MailProviderSettings
+
+        # Read region and configuration set from MailProviderSettings; fall back to env/defaults
+        region = "us-east-1"
+        self.configuration_set: str | None = None
 
         try:
             settings = MailProviderSettings.load()
+            region = settings.aws_region or os.getenv("AWS_REGION", "us-east-1")
             self.configuration_set = settings.ses_configuration_set or None
         except Exception:
-            logger.exception("Failed to load MailProviderSettings; SES sends will omit ConfigurationSetName")
-            return
+            logger.exception("Failed to load MailProviderSettings; falling back to env/defaults")
+            region = os.getenv("AWS_REGION", "us-east-1")
+
+        self.client: SESv2Client = boto3.client("sesv2", region_name=region)
 
         if self.configuration_set:
             self._ensure_configuration_set()
@@ -107,6 +110,12 @@ class SesSendProvider(EmailSendProvider):
                         "Charset": "UTF-8",
                     }
                 }
+
+            # Add custom headers (e.g., List-Unsubscribe for bulk senders)
+            if message.headers:
+                params["Content"]["Simple"]["Headers"] = [
+                    {"Name": k, "Value": v} for k, v in message.headers.items()
+                ]
 
             # Add configuration set if configured
             if self.configuration_set:

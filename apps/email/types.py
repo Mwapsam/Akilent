@@ -132,6 +132,7 @@ class OutboundEmail:
     subject: str
     text_body: str = ""
     html_body: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

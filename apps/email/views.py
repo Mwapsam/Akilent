@@ -21,6 +21,8 @@ from apps.email.models import (
     EmailTrackingEvent,
     EmailTrackingToken,
     SmtpCredential,
+    SuppressionListEntry,
+    UnsubscribeToken,
     WebhookDelivery,
     WebhookEndpoint,
 )
@@ -584,6 +586,46 @@ def tracking_click(request, token: str):
     except EmailTrackingToken.DoesNotExist:
         pass
     return redirect(destination)
+
+
+@csrf_exempt
+def unsubscribe(request, token: str):
+    """Process an unsubscribe request from a token link.
+
+    Marks the token as used and adds the recipient to the suppression list.
+    Returns a confirmation page.
+    """
+    email = None
+    try:
+        with transaction.atomic():
+            unsub_token = UnsubscribeToken.objects.select_related("account").get(
+                token=token, is_used=False
+            )
+            email = unsub_token.email
+            account = unsub_token.account
+
+            # Mark token as used
+            unsub_token.is_used = True
+            unsub_token.used_at = timezone.now()
+            unsub_token.save(update_fields=["is_used", "used_at"])
+
+            # Add to suppression list
+            SuppressionListEntry.objects.update_or_create(
+                account=account,
+                email=email,
+                defaults={"reason": SuppressionListEntry.Reason.UNSUBSCRIBE},
+            )
+            logger.info("Unsubscribed %s via token %s", email, token[:8])
+    except UnsubscribeToken.DoesNotExist:
+        logger.warning("Unsubscribe token not found or already used: %s", token[:8])
+    except Exception:
+        logger.exception("Error processing unsubscribe token: %s", token[:8])
+
+    return render(
+        request,
+        "email/unsubscribe_confirmed.html",
+        {"email": email or "unknown", "success": email is not None},
+    )
 
 
 # --- Transactional send API ---------------------------------------------------

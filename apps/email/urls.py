@@ -22,6 +22,7 @@ urlpatterns = [
     path("send/", views.api_send, name="email-send"),
     path("t/open/<str:token>/", views.tracking_open, name="email-tracking-open"),
     path("t/click/<str:token>/", views.tracking_click, name="email-tracking-click"),
+    path("t/unsub/<str:token>/", views.unsubscribe, name="email-unsubscribe"),
     path("templates/", views.templates_list, name="email-templates"),
     path("templates/create/", views.template_create, name="email-template-create"),
     path("templates/<int:pk>/", views.template_edit_form, name="email-template-detail"),

@@ -372,10 +372,7 @@ def _handle_delivery(ses_message: dict[str, Any]) -> None:
         return
 
     updated = EmailMessage.objects.filter(provider_message_id=message_id).update(
-        # Adjust field/status names to match your model.
-        status=getattr(EmailMessage, "Status", type("S", (), {"DELIVERED": "delivered"})).DELIVERED
-        if hasattr(EmailMessage, "Status")
-        else "delivered",
+        status=EmailMessage.Status.DELIVERED,
     )
     if updated:
         logger.info("Marked EmailMessage provider_message_id=%s as delivered", message_id)
