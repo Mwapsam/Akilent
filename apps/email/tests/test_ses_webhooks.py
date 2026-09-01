@@ -6,7 +6,7 @@ from django.test import TestCase, RequestFactory
 from apps.email.ses_webhooks import ses_sns_webhook
 from apps.email.models import SuppressionListEntry
 from apps.email.models import EmailMessage
-from apps.core.models import Account
+from apps.accounts.models import Account
 
 class SesWebhookTests(TestCase):
     def setUp(self):

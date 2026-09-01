@@ -1,4 +1,10 @@
-from moto import mock_aws
+import pytest
+
+try:
+    from moto import mock_aws
+except ImportError:
+    pytest.skip(allow_module_level=True, reason="moto not installed")
+
 import boto3
 from django.test import TestCase
 from apps.email.providers.ses.provider import SesProvider
