@@ -5,13 +5,11 @@ These give non-technical owners a front door for "user management" and
 """
 import logging
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -49,6 +47,7 @@ def _can_manage_team(membership) -> bool:
 
 def _send_invitation_email(request, invite):
     from apps.core.models import SiteSettings
+    from apps.email.services.send import send_system_email
     from apps.email.services.system_templates import render_system_email
 
     site_name = SiteSettings.load().app_name or "Automator"
@@ -62,7 +61,11 @@ def _send_invitation_email(request, invite):
         fallback_subject_template="accounts/invite_email_subject.txt",
         fallback_body_template="accounts/invite_email.txt",
     )
-    send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [invite.email], fail_silently=False)
+    send_system_email(
+        to_email=invite.email,
+        subject=subject,
+        text_body=body,
+    )
 
 
 # --- Profile ------------------------------------------------------------------

@@ -48,12 +48,19 @@ class LogoutView(_RestoreSiteBrandingMixin, auth_views.LogoutView):
 
 
 class PasswordResetView(auth_views.PasswordResetView):
-    """Password reset that emails the dashboard's configured app name.
+    """Password reset that emails the dashboard's configured app name via the active send provider.
 
     Django's default resolves ``site_name`` from django.contrib.sites (not
     installed here), which falls back to the request's raw domain instead of
     the branding configured in SiteSettings.
+
+    Uses a custom PasswordResetForm that sends via send_system_email (SES/SMTP)
+    instead of Django's hardcoded EMAIL_BACKEND, and respects suppression lists.
     """
+
+    def get_form_class(self):
+        from apps.accounts.forms import PasswordResetForm
+        return PasswordResetForm
 
     def form_valid(self, form):
         from apps.core.models import SiteSettings

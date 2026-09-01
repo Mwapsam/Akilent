@@ -77,6 +77,45 @@ def apply_tracking(html_body: str, message, recipient: str, domain: str) -> str:
         return html_body
 
 
+def send_system_email(
+    to_email: str,
+    subject: str,
+    text_body: str = "",
+    html_body: str = "",
+) -> None:
+    """Send a system email (password reset, verification, etc.) with suppression checks.
+
+    Emails to suppressed addresses are silently dropped (logged at warning level).
+    Uses the configured send provider (SES or SMTP).
+    Does not require domain verification or an Account — for platform system emails only.
+
+    Raises on non-suppression errors (caller should log/retry).
+    """
+    from apps.email.models import SuppressionListEntry
+    from apps.email.providers import get_send_provider
+    from apps.email.types import OutboundEmail
+
+    # Check if recipient is suppressed (global check, not account-specific)
+    if SuppressionListEntry.objects.filter(email=to_email).exists():
+        logger.warning("Suppressing system email to %s (suppression list)", to_email)
+        return
+
+    from_email = settings.DEFAULT_FROM_EMAIL
+
+    try:
+        result = get_send_provider().send(OutboundEmail(
+            from_email=from_email,
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        ))
+        logger.debug("Sent system email to %s via %s", to_email, get_send_provider().__class__.__name__)
+    except Exception as exc:
+        logger.error("Failed to send system email to %s: %s", to_email, exc)
+        raise
+
+
 def smtp_send(
     from_email: str,
     to_email: str,

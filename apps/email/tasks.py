@@ -304,8 +304,34 @@ def dispatch_campaign(self, campaign_id: int) -> None:
             campaign.mark_completed()
         return
 
-    granted = LimitChecker(campaign.account).reserve_bulk(len(chunk))
-    to_send, to_fail = chunk[:granted], chunk[granted:]
+    from apps.email.models import SuppressionListEntry
+
+    # Check for suppressed recipients (bounces, complaints, unsubscribes)
+    suppressed_emails = set(
+        SuppressionListEntry.objects.filter(
+            account=campaign.account,
+            email__in=[r.to_email for r in chunk],
+        ).values_list("email", flat=True)
+    )
+
+    to_process, suppressed_recipients = [], []
+    for r in chunk:
+        if r.to_email in suppressed_emails:
+            suppressed_recipients.append(r)
+        else:
+            to_process.append(r)
+
+    if suppressed_recipients:
+        BulkEmailRecipient.objects.filter(
+            pk__in=[r.pk for r in suppressed_recipients]
+        ).update(
+            status=BulkEmailRecipient.Status.FAILED,
+            error="Recipient is suppressed (bounce, complaint, or unsubscribe).",
+        )
+        campaign.increment_counts(failed=len(suppressed_recipients))
+
+    granted = LimitChecker(campaign.account).reserve_bulk(len(to_process))
+    to_send, to_fail = to_process[:granted], to_process[granted:]
 
     if to_fail:
         BulkEmailRecipient.objects.filter(

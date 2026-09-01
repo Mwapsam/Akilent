@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, UserCreationForm
 from django.contrib.auth.models import User
 
 from apps.accounts.models import Invitation
@@ -88,3 +88,34 @@ class AcceptInvitationForm(UserCreationForm):
     class Meta:
         model = User
         fields = ("username", "password1", "password2")
+
+
+class PasswordResetForm(PasswordResetForm):
+    """Password reset form that sends via the configured email provider (SES/SMTP).
+
+    Overrides Django's default send_mail to use send_system_email instead,
+    which respects suppression lists and the active send provider.
+    """
+
+    def send_mail(
+        self, subject_template_name, email_template_name, context, from_email,
+        to_email, html_email_template_name=None,
+    ):
+        from django.template.loader import render_to_string
+        from apps.email.services.send import send_system_email
+
+        subject = render_to_string(subject_template_name, context).strip()
+        message = render_to_string(email_template_name, context)
+        html_message = None
+        if html_email_template_name is not None:
+            html_message = render_to_string(html_email_template_name, context)
+
+        try:
+            send_system_email(
+                to_email=to_email,
+                subject=subject,
+                text_body=message,
+                html_body=html_message or "",
+            )
+        except Exception as exc:
+            raise forms.ValidationError(f"Failed to send password reset email: {exc}")

@@ -1,8 +1,6 @@
 import logging
 
 from celery import shared_task
-from django.conf import settings
-from django.core.mail import send_mail
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +39,11 @@ def send_verification_email(self, user_id: int, site_name: str, link: str) -> No
         fallback_body_template="accounts/verify_email.txt",
     )
     try:
-        send_mail(
-            subject,
-            body,
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False,
+        from apps.email.services.send import send_system_email
+        send_system_email(
+            to_email=user.email,
+            subject=subject,
+            text_body=body,
         )
     except Exception as exc:
         logger.exception("send_verification_email: failed for user %s", user_id)

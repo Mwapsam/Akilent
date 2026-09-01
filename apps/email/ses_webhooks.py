@@ -27,9 +27,37 @@ from django.views.decorators.http import require_POST
 
 logger = logging.getLogger(__name__)
 
-# Allowed SNS topic ARNs for this webhook. Must be non-empty in production.
-# Example: {"arn:aws:sns:us-east-1:123456789012:ses-events"}
-ALLOWED_SNS_TOPIC_ARNS: set[str] = set()  # populate from settings in real apps
+def _get_allowed_sns_topic_arns() -> set[str]:
+    """Load allowed SNS topic ARNs from MailProviderSettings or env var.
+
+    MailProviderSettings takes precedence; env var is the fallback.
+    Returns a set of ARNs, or empty set if not configured.
+    """
+    import os
+    from django.db import DEFAULT_DB_ALIAS, connections
+
+    # Try DB first (MailProviderSettings.ses_sns_topic_arn)
+    try:
+        # Check if DB is ready (avoid errors during migrations)
+        if connections[DEFAULT_DB_ALIAS].ensure_connection() is not None:
+            from apps.core.models import MailProviderSettings
+            settings_obj = MailProviderSettings.load()
+            if settings_obj.ses_sns_topic_arn:
+                return {settings_obj.ses_sns_topic_arn}
+    except Exception as e:
+        logger.debug("Failed to load MailProviderSettings (DB may not be ready): %s", e)
+
+    # Fallback to environment variable
+    env_arn = os.getenv("SES_SNS_TOPIC_ARN", "").strip()
+    return {env_arn} if env_arn else set()
+
+
+def _get_sns_topic_arn_if_allowed(topic_arn: str | None) -> bool:
+    """Check if a topic ARN is allowed."""
+    if not topic_arn:
+        return False
+    allowed = _get_allowed_sns_topic_arns()
+    return topic_arn in allowed
 
 # AWS SNS signing certs and SubscribeURLs are always hosted on a
 # sns.<region>.amazonaws.com (or .amazonaws.com.cn) host.
@@ -192,12 +220,16 @@ def ses_sns_webhook(request):
         return JsonResponse({"error": "Signature verification failed"}, status=403)
 
     topic_arn = message_data.get("TopicArn")
-    if not ALLOWED_SNS_TOPIC_ARNS:
-        logger.error("ALLOWED_SNS_TOPIC_ARNS is empty; refusing to process SNS messages")
-        return JsonResponse({"error": "Webhook not configured"}, status=503)
-    if not topic_arn or topic_arn not in ALLOWED_SNS_TOPIC_ARNS:
-        logger.warning("Rejecting unexpected or missing SNS TopicArn: %s", topic_arn)
-        return JsonResponse({"error": "Unexpected TopicArn"}, status=403)
+    if not _get_sns_topic_arn_if_allowed(topic_arn):
+        if not topic_arn:
+            logger.warning("SNS message missing TopicArn")
+        else:
+            allowed = _get_allowed_sns_topic_arns()
+            if not allowed:
+                logger.error("No SNS topic ARNs configured in MailProviderSettings or SES_SNS_TOPIC_ARN env var")
+            else:
+                logger.warning("Rejecting unexpected SNS TopicArn: %s (allowed: %s)", topic_arn, allowed)
+        return JsonResponse({"error": "Unexpected or unconfigured TopicArn"}, status=403)
 
     sns_message_id = message_data.get("MessageId") or ""
 
