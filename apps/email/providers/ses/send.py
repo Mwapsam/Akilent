@@ -74,6 +74,13 @@ class SesSendProvider(EmailSendProvider):
                 "neither html_body nor text_body is set"
             )
 
+        from apps.email.services.rate_limiter import get_ses_rate_limiter
+
+        rate_limiter = get_ses_rate_limiter()
+        waited = rate_limiter.wait_for(1.0)
+        if waited > 0.01:
+            logger.debug("SES send: waited %.3f sec for rate limit token", waited)
+
         try:
             params = {
                 "FromEmailAddress": message.from_email,

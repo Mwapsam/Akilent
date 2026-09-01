@@ -39,12 +39,24 @@ from apps.email.webhooks import EVENT_HEADER, SIGNATURE_HEADER, build_signature_
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
-_RETRY_DELAY = 60  # seconds
+_RETRY_DELAY_BASE = 2  # seconds (exponential base)
+_RETRY_DELAY_MULTIPLIER = 2  # exponential growth
 
 _WEBHOOK_MAX_RETRIES = 6
 _WEBHOOK_TIMEOUT_SECONDS = 10
 
 _CAMPAIGN_CHUNK_SIZE = 500
+
+
+def _exponential_backoff_delay(retry_count: int, base: int = _RETRY_DELAY_BASE, multiplier: int = _RETRY_DELAY_MULTIPLIER) -> int:
+    """Calculate exponential backoff delay: base * (multiplier ** retry_count).
+
+    Examples:
+      retry 0 -> 2 sec
+      retry 1 -> 4 sec
+      retry 2 -> 8 sec
+    """
+    return base * (multiplier ** retry_count)
 
 
 # â”€â”€ Domain provisioning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -149,7 +161,8 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
                     status=BulkEmailRecipient.Status.FAILED, error=str(exc)[:5000]
                 )
                 _maybe_complete_campaign(msg.campaign)
-        raise task.retry(exc=exc)
+        delay = _exponential_backoff_delay(task.request.retries)
+        raise task.retry(exc=exc, countdown=delay)
 
 
 def _maybe_complete_campaign(campaign: BulkEmailCampaign) -> None:

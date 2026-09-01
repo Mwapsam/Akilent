@@ -15,6 +15,30 @@ logger = logging.getLogger(__name__)
 class RelayHandler:
     """Handles incoming SMTP messages and delivers via configured send provider."""
 
+    def _extract_text_and_html(self, msg):
+        """Extract text and HTML bodies from email message (handles multipart)."""
+        text_body = ""
+        html_body = ""
+
+        if msg.is_multipart():
+            for part in msg.iter_parts():
+                content_type = part.get_content_type()
+                try:
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        payload_str = payload.decode("utf-8", errors="replace")
+                        if content_type == "text/plain" and not text_body:
+                            text_body = payload_str
+                        elif content_type == "text/html" and not html_body:
+                            html_body = payload_str
+                except Exception as e:
+                    logger.debug(f"SMTP: failed to decode {content_type}: {e}")
+        else:
+            # Non-multipart: treat as text body
+            text_body = msg.get_payload()
+
+        return text_body, html_body
+
     async def handle_DATA(self, server, session, envelope):
         """Accept email and queue for delivery."""
         if not session.authenticated:
@@ -38,22 +62,26 @@ class RelayHandler:
 
         # Extract headers
         from_email = envelope.mail_from or msg.get("From", "")
-        to_email = envelope.rcpt_tos[0] if envelope.rcpt_tos else ""
+        to_emails = envelope.rcpt_tos or []
 
-        if not from_email or not to_email:
+        if not from_email or not to_emails:
             return "550 Missing From or To header"
 
-        # Queue for delivery
+        subject = msg.get("Subject", "")
+        text_body, html_body = self._extract_text_and_html(msg)
+
+        # Queue a message for each recipient
         try:
-            create_and_queue_message(
-                account=cred.account,
-                from_email=from_email,
-                to_email=to_email,
-                subject=msg.get("Subject", ""),
-                text_body=msg.get_payload() if not msg.is_multipart() else "",
-                html_body="",
-            )
-            logger.info(f"SMTP: queued message from {username} to {to_email}")
+            for to_email in to_emails:
+                create_and_queue_message(
+                    account=cred.account,
+                    from_email=from_email,
+                    to_email=to_email,
+                    subject=subject,
+                    text_body=text_body,
+                    html_body=html_body,
+                )
+            logger.info(f"SMTP: queued {len(to_emails)} message(s) from {username}")
             return "250 Message accepted"
         except Exception as exc:
             logger.error(f"SMTP: failed to queue message: {exc}")
@@ -123,13 +151,22 @@ class Command(BaseCommand):
             logger.warning(f"SMTP auth failed: invalid password for {username}")
             return AuthResult(success=False)
 
+        # Read TLS requirement from MailProviderSettings
+        require_tls = True
+        try:
+            from apps.core.models import MailProviderSettings
+            settings_obj = MailProviderSettings.load()
+            require_tls = settings_obj.smtp_require_tls
+        except Exception as e:
+            logger.warning(f"Failed to load SMTP TLS setting; defaulting to required: {e}")
+
         # Create and run the controller
         controller = Controller(
             RelayHandler(),
             hostname=host,
             port=port,
             auth_required=True,
-            auth_require_tls=False,  # Allow auth over unencrypted (for localhost dev)
+            auth_require_tls=require_tls,
             auth_callback=auth_callback,
         )
 

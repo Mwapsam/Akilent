@@ -117,6 +117,18 @@ class MailProviderSettings(models.Model):
         help_text="SNS topic ARN for receiving bounce/complaint notifications (required if configuration_set is used)"
     )
 
+    # SES operational hardening (Phase 3)
+    ses_send_rate_limit = models.PositiveIntegerField(
+        default=14,
+        help_text="Max sends per second for SES (default 14, AWS SES sandbox default; can go higher with send limit increase)"
+    )
+
+    # SMTP relay hardening (Phase 3)
+    smtp_require_tls = models.BooleanField(
+        default=True,
+        help_text="Enforce TLS for SMTP relay connections (security best-practice; set False only for dev/testing)"
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
