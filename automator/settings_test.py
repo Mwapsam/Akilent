@@ -1,9 +1,4 @@
-"""Test settings: deterministic, no external services.
 
-Env defaults are set *before* importing the base settings so that ``DATABASES``
-and the required-secret checks resolve to local test values regardless of when
-pytest loads conftest files.
-"""
 import os
 
 from cryptography.fernet import Fernet
