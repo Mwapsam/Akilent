@@ -293,70 +293,90 @@ def ses_sns_webhook(request):
 
 
 def _handle_bounce(ses_message: dict[str, Any]) -> None:
-    from apps.email.models import SuppressionListEntry
+    from apps.email.services.suppression import record_event
 
     bounce = ses_message.get("bounce", {})
     bounce_type = bounce.get("bounceType", "Undetermined")
     recipients = bounce.get("bouncedRecipients", [])
 
-    if bounce_type != "Permanent":
-        logger.debug("Ignoring %s bounce", bounce_type)
-        return
-
     message_id = ses_message.get("mail", {}).get("messageId")
     account = _find_account_for_message(message_id)
+
+    # Fallback: resolve account via sender domain if EmailMessage not found
     if not account:
-        # Acknowledge at the webhook layer; we cannot suppress without an account.
-        logger.warning(
-            "No EmailMessage for SES messageId=%s; cannot suppress bounce recipients",
-            message_id,
-        )
-        return
+        sender = ses_message.get("mail", {}).get("source", "")
+        if sender:
+            account = _find_account_for_sender_domain(sender)
+        if not account:
+            logger.warning(
+                "No account found for SES bounce (messageId=%s, sender=%s); dropping event",
+                message_id,
+                sender,
+            )
+            return
+
+    # Map bounce_type to suppression reason
+    if bounce_type == "Permanent":
+        reason = "bounce"
+    else:
+        reason = "soft_bounce"
 
     for recipient in recipients:
         email = recipient.get("emailAddress")
         if not email:
             continue
 
-        SuppressionListEntry.objects.get_or_create(
+        record_event(
             account=account,
             email=email,
-            defaults={
-                "reason": SuppressionListEntry.Reason.BOUNCE,
-                "bounce_type": bounce_type,
-            },
+            reason=reason,
+            bounce_type=bounce_type,
         )
-        logger.info("Added %s to suppression list (bounce)", email)
+        logger.info(
+            "Recorded %s bounce for %s (account=%s)",
+            bounce_type,
+            email,
+            account.id,
+        )
 
 
 def _handle_complaint(ses_message: dict[str, Any]) -> None:
-    from apps.email.models import SuppressionListEntry
+    from apps.email.services.suppression import record_event
 
     complaint = ses_message.get("complaint", {})
     recipients = complaint.get("complainedRecipients", [])
 
     message_id = ses_message.get("mail", {}).get("messageId")
     account = _find_account_for_message(message_id)
+
+    # Fallback: resolve account via sender domain if EmailMessage not found
     if not account:
-        logger.warning(
-            "No EmailMessage for SES messageId=%s; cannot suppress complaint recipients",
-            message_id,
-        )
-        return
+        sender = ses_message.get("mail", {}).get("source", "")
+        if sender:
+            account = _find_account_for_sender_domain(sender)
+        if not account:
+            logger.warning(
+                "No account found for SES complaint (messageId=%s, sender=%s); dropping event",
+                message_id,
+                sender,
+            )
+            return
 
     for recipient in recipients:
         email = recipient.get("emailAddress")
         if not email:
             continue
 
-        SuppressionListEntry.objects.get_or_create(
+        record_event(
             account=account,
             email=email,
-            defaults={
-                "reason": SuppressionListEntry.Reason.COMPLAINT,
-            },
+            reason="complaint",
         )
-        logger.info("Added %s to suppression list (complaint)", email)
+        logger.info(
+            "Recorded complaint for %s (account=%s)",
+            email,
+            account.id,
+        )
 
 
 def _handle_delivery(ses_message: dict[str, Any]) -> None:
@@ -394,4 +414,24 @@ def _find_account_for_message(message_id: str | None):
         msg = EmailMessage.objects.get(provider_message_id=message_id)
         return msg.account
     except EmailMessage.DoesNotExist:
+        return None
+
+
+def _find_account_for_sender_domain(sender_email: str):
+    """Resolve account via sender domain when EmailMessage record is missing.
+
+    Fallback for bounce/complaint events that arrive after old EmailMessage rows
+    are pruned. Looks up the sending domain in EmailDomain and returns the account.
+    """
+    if not sender_email or "@" not in sender_email:
+        return None
+
+    domain = sender_email.split("@", 1)[1]
+
+    from apps.email.models import EmailDomain
+
+    try:
+        email_domain = EmailDomain.objects.select_related("account").get(domain=domain)
+        return email_domain.account
+    except EmailDomain.DoesNotExist:
         return None

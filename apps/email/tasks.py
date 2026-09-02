@@ -109,6 +109,14 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
 
     ``task`` is the bound Celery task instance (for retry/request.retries).
     """
+    from apps.email.services.suppression import is_suppressed
+
+    # Final suppression gate before sending (catch-all for race conditions)
+    if is_suppressed(msg.account, msg.to_email):
+        logger.info("Refusing to send: %s is suppressed", msg.to_email)
+        msg.mark_failed("Recipient is suppressed (bounce, complaint, or unsubscribe)")
+        return
+
     if html_body:
         try:
             from apps.billing.limits import LimitChecker
@@ -318,31 +326,34 @@ def dispatch_campaign(self, campaign_id: int) -> None:
             campaign.mark_completed()
         return
 
-    from apps.email.models import SuppressionListEntry
+    from apps.email.services.suppression import get_suppressed_emails
+    from apps.email.services.validation import validate_recipient
 
     # Check for suppressed recipients (bounces, complaints, unsubscribes)
-    suppressed_emails = set(
-        SuppressionListEntry.objects.filter(
-            account=campaign.account,
-            email__in=[r.to_email for r in chunk],
-        ).values_list("email", flat=True)
-    )
+    suppressed_emails = get_suppressed_emails(campaign.account, [r.to_email for r in chunk])
 
-    to_process, suppressed_recipients = [], []
+    to_process, failed_recipients = [], []
     for r in chunk:
         if r.to_email in suppressed_emails:
-            suppressed_recipients.append(r)
+            failed_recipients.append((r, "Recipient is suppressed (bounce, complaint, or unsubscribe)."))
+        elif not validate_recipient(r.to_email):
+            failed_recipients.append((r, "Recipient failed validation (invalid syntax or no MX record)."))
         else:
             to_process.append(r)
 
-    if suppressed_recipients:
-        BulkEmailRecipient.objects.filter(
-            pk__in=[r.pk for r in suppressed_recipients]
-        ).update(
-            status=BulkEmailRecipient.Status.FAILED,
-            error="Recipient is suppressed (bounce, complaint, or unsubscribe).",
+    if failed_recipients:
+        BulkEmailRecipient.objects.bulk_update(
+            [
+                BulkEmailRecipient(
+                    pk=r.pk,
+                    status=BulkEmailRecipient.Status.FAILED,
+                    error=error,
+                )
+                for r, error in failed_recipients
+            ],
+            ["status", "error"],
         )
-        campaign.increment_counts(failed=len(suppressed_recipients))
+        campaign.increment_counts(failed=len(failed_recipients))
 
     granted = LimitChecker(campaign.account).reserve_bulk(len(to_process))
     to_send, to_fail = to_process[:granted], to_process[granted:]

@@ -869,8 +869,10 @@ class SuppressionListEntry(models.Model):
 
     class Reason(models.TextChoices):
         BOUNCE = "bounce", "Hard Bounce"
+        SOFT_BOUNCE = "soft_bounce", "Transient/Undetermined Bounce"
         COMPLAINT = "complaint", "Complaint (Abuse Report)"
         UNSUBSCRIBE = "unsubscribe", "Unsubscribed"
+        INVALID = "invalid", "Failed Validation"
         MANUAL = "manual", "Manually Suppressed"
 
     account = models.ForeignKey(
@@ -894,13 +896,18 @@ class SuppressionListEntry(models.Model):
         help_text="SES bounce type: Permanent, Transient, or Undetermined"
     )
 
+    # Track repeat events for soft bounces and other reasons
+    bounce_count = models.PositiveIntegerField(default=1)
+
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["account", "email"]),
             models.Index(fields=["account", "reason"]),
+            models.Index(fields=["email"]),
         ]
         # Prevent duplicate suppressions per email per account
         unique_together = ["account", "email"]

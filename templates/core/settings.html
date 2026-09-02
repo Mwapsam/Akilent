@@ -70,6 +70,74 @@
     <div><button class="btn btn-primary" type="submit">Save settings</button></div>
   </form>
 
+  {# Mail provider & SES config #}
+  <form method="post" action="{% url 'core:mail-settings' %}" class="lg:col-span-2 space-y-6">
+    {% csrf_token %}
+
+    <div class="card card-pad">
+      <h2 class="font-semibold mb-4">Email & SES Configuration</h2>
+
+      <div class="space-y-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="label" for="id_infra_backend">Mail server backend</label>
+            <select id="id_infra_backend" name="infra_backend" class="input">
+              {% for value, label in mail.BACKEND_CHOICES %}
+                <option value="{{ value }}" {% if mail.infra_backend == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="label" for="id_send_backend">Sending provider</label>
+            <select id="id_send_backend" name="send_backend" class="input">
+              {% for value, label in mail.SEND_BACKEND_CHOICES %}
+                <option value="{{ value }}" {% if mail.send_backend == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="border-t border-border pt-4">
+          <h3 class="font-medium text-sm mb-3">AWS SES</h3>
+          <div class="grid sm:grid-cols-2 gap-4">
+            {% include "components/form_field.html" with name="aws_region" label="AWS Region" value=mail.aws_region placeholder="us-east-1" %}
+            {% include "components/form_field.html" with name="ses_configuration_set" label="SES Configuration Set" value=mail.ses_configuration_set %}
+          </div>
+          <div class="mt-4">
+            {% include "components/form_field.html" with name="ses_sns_topic_arn" label="SNS Topic ARN (bounce/complaint)" value=mail.ses_sns_topic_arn %}
+          </div>
+          <div class="mt-4">
+            {% include "components/form_field.html" with name="ses_send_rate_limit" label="SES Send Rate Limit (messages/sec)" type="number" value=mail.ses_send_rate_limit min="1" %}
+          </div>
+        </div>
+
+        <div class="border-t border-border pt-4">
+          <h3 class="font-medium text-sm mb-3">SMTP Relay Hardening</h3>
+          <label class="flex items-center gap-3 text-sm">
+            <input type="checkbox" name="smtp_require_tls" class="rounded border-border-strong" {% if mail.smtp_require_tls %}checked{% endif %}>
+            Require TLS for SMTP connections
+          </label>
+        </div>
+
+        <div class="border-t border-border pt-4">
+          <h3 class="font-medium text-sm mb-3">Recipient Validation (Phase 4)</h3>
+          <div class="space-y-3 mb-4">
+            <label class="flex items-center gap-3 text-sm">
+              <input type="checkbox" name="enable_recipient_validation" class="rounded border-border-strong" {% if mail.enable_recipient_validation %}checked{% endif %}>
+              Enable pre-send email validation (syntax + MX record checks)
+            </label>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            {% include "components/form_field.html" with name="mx_validation_cache_ttl_seconds" label="MX Lookup Cache TTL (seconds)" type="number" value=mail.mx_validation_cache_ttl_seconds min="0" %}
+            {% include "components/form_field.html" with name="soft_bounce_threshold" label="Soft Bounce Threshold (escalate after N)" type="number" value=mail.soft_bounce_threshold min="1" %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div><button class="btn btn-primary" type="submit">Save mail settings</button></div>
+  </form>
+
 <div class="space-y-6">
 
   {# Signup & login #}

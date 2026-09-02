@@ -129,6 +129,20 @@ class MailProviderSettings(models.Model):
         help_text="Enforce TLS for SMTP relay connections (security best-practice; set False only for dev/testing)"
     )
 
+    # Phase 4: recipient validation & suppression hardening
+    enable_recipient_validation = models.BooleanField(
+        default=True,
+        help_text="Enable pre-send email validation (syntax + MX record checks) to suppress invalid addresses"
+    )
+    mx_validation_cache_ttl_seconds = models.PositiveIntegerField(
+        default=86400,
+        help_text="Cache time-to-live for MX record lookups in seconds (default 24 hours)"
+    )
+    soft_bounce_threshold = models.PositiveIntegerField(
+        default=3,
+        help_text="Number of transient bounces before escalating to hard suppression (default 3)"
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

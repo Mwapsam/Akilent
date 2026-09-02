@@ -91,13 +91,19 @@ def send_system_email(
 
     Raises on non-suppression errors (caller should log/retry).
     """
-    from apps.email.models import SuppressionListEntry
     from apps.email.providers import get_send_provider
     from apps.email.types import OutboundEmail
+    from apps.email.services.suppression import is_suppressed_globally
+    from apps.email.services.validation import validate_recipient
 
     # Check if recipient is suppressed (global check, not account-specific)
-    if SuppressionListEntry.objects.filter(email=to_email).exists():
+    if is_suppressed_globally(to_email):
         logger.warning("Suppressing system email to %s (suppression list)", to_email)
+        return
+
+    # Validate recipient address (syntax + MX record)
+    if not validate_recipient(to_email):
+        logger.warning("Skipping system email to %s (validation failed)", to_email)
         return
 
     from_email = settings.DEFAULT_FROM_EMAIL

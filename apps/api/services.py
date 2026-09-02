@@ -70,10 +70,16 @@ def create_and_queue_message(
     lc.require_feature("email_apis", "the email API & SMTP relay")
     lc.check_email()
 
-    # Check suppression list (bounces, complaints, unsubscribes)
-    from apps.email.models import SuppressionListEntry
-    if SuppressionListEntry.objects.filter(account=account, email=to_email).exists():
+    # Check suppression list and validate recipient
+    from apps.email.services.suppression import is_suppressed, record_event
+    from apps.email.services.validation import validate_recipient
+
+    if is_suppressed(account, to_email):
         raise UnverifiedDomainError(f"{to_email} is suppressed (bounce, complaint, or unsubscribe)")
+
+    if not validate_recipient(to_email):
+        record_event(account=account, email=to_email, reason="invalid")
+        raise UnverifiedDomainError(f"{to_email} failed validation (invalid syntax or no MX record)")
 
     template = None
     if template_id is not None:

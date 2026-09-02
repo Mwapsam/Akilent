@@ -15,7 +15,7 @@ from apps.billing.models import Plan, Subscription, UsageSummary
 from apps.core import docs as docs_kb
 from apps.core import help as help_kb
 from apps.core.forms import ConfigurationForm
-from apps.core.models import Configurations, SiteSettings
+from apps.core.models import Configurations, SiteSettings, MailProviderSettings
 from apps.core.utils import admin_required
 
 User = get_user_model()
@@ -122,7 +122,43 @@ def settings_page(request):
     return render(request, "core/settings.html", {
         "plans": Plan.objects.all().order_by("price_monthly"),
         "admins": User.objects.order_by("-is_superuser", "username"),
+        "mail": MailProviderSettings.load(),
     })
+
+
+@admin_required
+@require_POST
+def mail_settings_save(request):
+    """Save mail provider settings (SES, SMTP, validation config)."""
+    mail = MailProviderSettings.load()
+
+    mail.infra_backend = request.POST.get("infra_backend") or mail.infra_backend
+    mail.send_backend = request.POST.get("send_backend") or mail.send_backend
+    mail.aws_region = (request.POST.get("aws_region") or "").strip() or mail.aws_region
+    mail.ses_configuration_set = (request.POST.get("ses_configuration_set") or "").strip()
+    mail.ses_sns_topic_arn = (request.POST.get("ses_sns_topic_arn") or "").strip()
+
+    try:
+        mail.ses_send_rate_limit = max(1, int(request.POST.get("ses_send_rate_limit") or mail.ses_send_rate_limit))
+    except ValueError:
+        pass
+
+    mail.smtp_require_tls = "smtp_require_tls" in request.POST
+    mail.enable_recipient_validation = "enable_recipient_validation" in request.POST
+
+    try:
+        mail.mx_validation_cache_ttl_seconds = max(0, int(request.POST.get("mx_validation_cache_ttl_seconds") or mail.mx_validation_cache_ttl_seconds))
+    except ValueError:
+        pass
+
+    try:
+        mail.soft_bounce_threshold = max(1, int(request.POST.get("soft_bounce_threshold") or mail.soft_bounce_threshold))
+    except ValueError:
+        pass
+
+    mail.save()
+    messages.success(request, "Mail settings saved.")
+    return redirect("core:settings")
 
 
 # --- Help center (public knowledge base) --------------------------------------

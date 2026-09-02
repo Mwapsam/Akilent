@@ -595,6 +595,8 @@ def unsubscribe(request, token: str):
     Marks the token as used and adds the recipient to the suppression list.
     Returns a confirmation page.
     """
+    from apps.email.services.suppression import record_event
+
     email = None
     try:
         with transaction.atomic():
@@ -610,10 +612,10 @@ def unsubscribe(request, token: str):
             unsub_token.save(update_fields=["is_used", "used_at"])
 
             # Add to suppression list
-            SuppressionListEntry.objects.update_or_create(
+            record_event(
                 account=account,
                 email=email,
-                defaults={"reason": SuppressionListEntry.Reason.UNSUBSCRIBE},
+                reason="unsubscribe",
             )
             logger.info("Unsubscribed %s via token %s", email, token[:8])
     except UnsubscribeToken.DoesNotExist:
