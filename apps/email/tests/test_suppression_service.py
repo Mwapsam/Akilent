@@ -17,7 +17,7 @@ from apps.core.models import MailProviderSettings
 @pytest.fixture
 def account(db):
     """Create a test account."""
-    return Account.objects.create(name="Test Account", slug="test")
+    return Account.objects.create(company_name="Test Account", slug="test")
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ class TestIsSuppressed:
 
     def test_account_scoped(self, account, db):
         """Suppression should be account-scoped."""
-        other_account = Account.objects.create(name="Other", slug="other")
+        other_account = Account.objects.create(company_name="Other", slug="other")
 
         SuppressionListEntry.objects.create(
             account=account,
@@ -114,13 +114,13 @@ class TestIsSuppressed:
 class TestIsSuppressedGlobally:
     """Test global suppression checking (cross-account)."""
 
-    def test_not_suppressed_globally(self):
+    def test_not_suppressed_globally(self, db):
         """Non-suppressed email should return False globally."""
         assert not is_suppressed_globally("unknown@example.com")
 
     def test_globally_suppressed(self, db):
         """Email suppressed in any account should be globally suppressed."""
-        account = Account.objects.create(name="Test", slug="test")
+        account = Account.objects.create(company_name="Test", slug="test")
         SuppressionListEntry.objects.create(
             account=account,
             email="global@example.com",
@@ -130,7 +130,7 @@ class TestIsSuppressedGlobally:
 
     def test_soft_bounce_not_globally_blocking(self, db):
         """Soft bounce should not globally suppress."""
-        account = Account.objects.create(name="Test", slug="test")
+        account = Account.objects.create(company_name="Test", slug="test")
         SuppressionListEntry.objects.create(
             account=account,
             email="soft@example.com",

@@ -10,6 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('accounts', '0003_invitation'),
+        ('whatsapp', '0002_remove_automationrule_whatsapp_au_account_7f7c6d_idx_and_more'),
     ]
 
     operations = [

@@ -66,6 +66,12 @@ def get_state(account) -> dict:
             "icon": "check-circle", "optional": False,
         },
         {
+            "key": "use", "title": "Set up your email API",
+            "desc": "Generate an API key to start sending email from your app.",
+            "done": has_key, "url": "/email/api/", "cta": "Get API key",
+            "icon": "code", "optional": False,
+        },
+        {
             "key": "team", "title": "Invite your team",
             "desc": "Bring colleagues into your workspace so they can help manage email.",
             "done": has_team, "url": "/settings/team/", "cta": "Invite teammate",

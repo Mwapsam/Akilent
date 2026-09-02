@@ -14,7 +14,6 @@ from typing import Optional
 from django.db import transaction
 
 from apps.email.models import SuppressionListEntry, EmailMessage
-from apps.core.models import MailProviderSettings
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +102,8 @@ def record_event(
     Returns:
         The created or updated SuppressionListEntry row
     """
+    from apps.core.models import MailProviderSettings
+
     settings = MailProviderSettings.load()
     soft_bounce_threshold = settings.soft_bounce_threshold
 
