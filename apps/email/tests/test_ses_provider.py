@@ -28,8 +28,12 @@ class _ConcreteSesProvider(SesProvider):
         raise NotImplementedError("SES provider doesn't support update_domain")
 
     def delete_domain(self, domain: str) -> OperationResult:
-        """Not implemented for SES provider."""
-        raise NotImplementedError("SES provider doesn't support delete_domain")
+        """Delete a domain from SES (not tested in test_ses_provider.py)."""
+        try:
+            self.client.delete_email_identity(EmailIdentity=domain)
+            return OperationResult(success=True)
+        except Exception:
+            return OperationResult(success=False)
 
     def set_domain_active(self, domain: str, *, active: bool) -> OperationResult:
         """Not implemented for SES provider."""
@@ -82,8 +86,9 @@ class SesProviderTests(TestCase):
         self.provider.create_domain(domain)
 
         with patch("botocore.client.BaseClient._make_api_call") as mock_call:
+            # SESv2 API returns VerificationStatus at top level
             mock_call.return_value = {
-                "Attributes": {"VerificationStatus": "SUCCESS"}
+                "VerificationStatus": "SUCCESS"
             }
             result = self.provider.verify_domain(domain)
             self.assertTrue(result.success)
@@ -93,8 +98,9 @@ class SesProviderTests(TestCase):
         self.provider.create_domain(domain)
 
         with patch("botocore.client.BaseClient._make_api_call") as mock_call:
+            # SESv2 API returns VerificationStatus at top level
             mock_call.return_value = {
-                "Attributes": {"VerificationStatus": "FAILED"}
+                "VerificationStatus": "FAILED"
             }
             result = self.provider.verify_domain(domain)
             self.assertFalse(result.success)
@@ -104,12 +110,13 @@ class SesProviderTests(TestCase):
         self.provider.create_domain(domain)
 
         with patch("botocore.client.BaseClient._make_api_call") as mock_call:
+            # SESv2 API returns DkimAttributes.Tokens at that path
             mock_call.return_value = {
-                "Attributes": {"DkimTokens": ["token123", "token456", "token789"]}
+                "DkimAttributes": {"Tokens": ["token123", "token456", "token789"]}
             }
             dkim = self.provider.get_dkim(domain)
             self.assertIsNotNone(dkim)
-            self.assertEqual(dkim.selector, "amazonses")
+            self.assertEqual(dkim.selector, "token123")
             self.assertEqual(dkim.public_key, "token123.dkim.amazonses.com")
             self.assertTrue(dkim.is_cname)
 
@@ -118,8 +125,9 @@ class SesProviderTests(TestCase):
         self.provider.create_domain(domain)
 
         with patch("botocore.client.BaseClient._make_api_call") as mock_call:
+            # SESv2 API returns DkimAttributes.Tokens at that path
             mock_call.return_value = {
-                "Attributes": {"DkimTokens": ["token123", "token456", "token789"]}
+                "DkimAttributes": {"Tokens": ["token123", "token456", "token789"]}
             }
             records = self.provider.get_dkim_records(domain)
             self.assertEqual(len(records), 3)
