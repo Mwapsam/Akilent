@@ -8,15 +8,15 @@ import os
 
 from cryptography.fernet import Fernet
 
-os.environ.setdefault("USE_SQLITE", "1")
-os.environ.setdefault("DEBUG", "true")
-os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key")
-os.environ.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
-os.environ.setdefault("FLUTTERWAVE_SECRET_KEY", "FLWSECK_TEST-testkey")
-os.environ.setdefault("FLUTTERWAVE_WEBHOOK_HASH", "test-hash")
-os.environ.setdefault("WHATSAPP_ENABLED", "true")
-os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_verify_token")
-os.environ.setdefault("WHATSAPP_APP_SECRET", "test_app_secret")
+os.environ["USE_SQLITE"] = "1"
+os.environ["DEBUG"] = "true"
+os.environ["DJANGO_SECRET_KEY"] = "test-secret-key"
+os.environ["FIELD_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+os.environ["FLUTTERWAVE_SECRET_KEY"] = "FLWSECK_TEST-testkey"
+os.environ["FLUTTERWAVE_WEBHOOK_HASH"] = "test-hash"
+os.environ["WHATSAPP_ENABLED"] = "false"
+os.environ["WHATSAPP_VERIFY_TOKEN"] = "test_verify_token"
+os.environ["WHATSAPP_APP_SECRET"] = "test_app_secret"
 
 from automator.settings import *  # noqa: F401,F403,E402
 

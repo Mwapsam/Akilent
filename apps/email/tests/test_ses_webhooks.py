@@ -11,7 +11,7 @@ from apps.accounts.models import Account
 class SesWebhookTests(TestCase):
     def setUp(self):
         self.rf = RequestFactory()
-        self.account = Account.objects.create(name="Test Account")
+        self.account = Account.objects.create(company_name="Test Account")
         self.email_msg = EmailMessage.objects.create(
             account=self.account,
             provider_message_id="msg-123",
@@ -23,18 +23,21 @@ class SesWebhookTests(TestCase):
     def test_ses_sns_webhook_subscription_confirmation(self):
         payload = {
             "Type": "SubscriptionConfirmation",
+            "TopicArn": "arn:aws:sns:us-east-1:123456789:test-topic",
             "SubscribeURL": "http://example.com/confirm",
             "Signature": "valid-sig",
             "SigningCertUrl": "http://example.com/cert"
         }
 
         with patch("apps.email.ses_webhooks._verify_sns_signature", return_value=True):
-            with patch("requests.get") as mock_get:
-                request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
-                response = ses_sns_webhook(request)
+            with patch("apps.email.ses_webhooks._get_sns_topic_arn_if_allowed", return_value="arn:aws:sns:us-east-1:123456789:test-topic"):
+                with patch("apps.email.ses_webhooks._is_valid_sns_url", return_value=True):
+                    with patch("requests.get") as mock_get:
+                        request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
+                        response = ses_sns_webhook(request)
 
-                self.assertEqual(response.status_code, 200)
-                mock_get.assert_called_once_with("http://example.com/confirm", timeout=5)
+                        self.assertEqual(response.status_code, 200)
+                        mock_get.assert_called_once_with("http://example.com/confirm", timeout=5, allow_redirects=False)
 
     def test_ses_sns_webhook_invalid_signature(self):
         payload = {
@@ -52,6 +55,7 @@ class SesWebhookTests(TestCase):
     def test_ses_sns_webhook_bounce(self):
         payload = {
             "Type": "Notification",
+            "TopicArn": "arn:aws:sns:us-east-1:123456789:test-topic",
             "Message": json.dumps({
                 "eventType": "Bounce",
                 "bounce": {
@@ -65,17 +69,19 @@ class SesWebhookTests(TestCase):
         }
 
         with patch("apps.email.ses_webhooks._verify_sns_signature", return_value=True):
-            request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
-            response = ses_sns_webhook(request)
+            with patch("apps.email.ses_webhooks._get_sns_topic_arn_if_allowed", return_value="arn:aws:sns:us-east-1:123456789:test-topic"):
+                request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
+                response = ses_sns_webhook(request)
 
-            self.assertEqual(response.status_code, 200)
-            suppression = SuppressionListEntry.objects.filter(email="recipient@example.com").first()
-            self.assertIsNotNone(suppression)
-            self.assertEqual(suppression.reason, SuppressionListEntry.Reason.BOUNCE)
+                self.assertEqual(response.status_code, 200)
+                suppression = SuppressionListEntry.objects.filter(email="recipient@example.com").first()
+                self.assertIsNotNone(suppression)
+                self.assertEqual(suppression.reason, SuppressionListEntry.Reason.BOUNCE)
 
     def test_ses_sns_webhook_complaint(self):
         payload = {
             "Type": "Notification",
+            "TopicArn": "arn:aws:sns:us-east-1:123456789:test-topic",
             "Message": json.dumps({
                 "eventType": "Complaint",
                 "complaint": {
@@ -88,10 +94,11 @@ class SesWebhookTests(TestCase):
         }
 
         with patch("apps.email.ses_webhooks._verify_sns_signature", return_value=True):
-            request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
-            response = ses_sns_webhook(request)
+            with patch("apps.email.ses_webhooks._get_sns_topic_arn_if_allowed", return_value="arn:aws:sns:us-east-1:123456789:test-topic"):
+                request = self.rf.post("/webhooks/ses/", data=json.dumps(payload), content_type="application/json")
+                response = ses_sns_webhook(request)
 
-            self.assertEqual(response.status_code, 200)
-            suppression = SuppressionListEntry.objects.filter(email="recipient@example.com").first()
-            self.assertIsNotNone(suppression)
-            self.assertEqual(suppression.reason, SuppressionListEntry.Reason.COMPLAINT)
+                self.assertEqual(response.status_code, 200)
+                suppression = SuppressionListEntry.objects.filter(email="recipient@example.com").first()
+                self.assertIsNotNone(suppression)
+                self.assertEqual(suppression.reason, SuppressionListEntry.Reason.COMPLAINT)

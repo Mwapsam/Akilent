@@ -35,7 +35,7 @@ class TestIsValidSyntax:
 class TestHasMxRecord:
     """Test MX record checking with monkeypatched DNS."""
 
-    def test_domain_with_mx_record(self, monkeypatch):
+    def test_domain_with_mx_record(self, monkeypatch, db):
         """Domain that has MX records should return True."""
         def fake_resolver(domain):
             if domain == "example.com":
@@ -45,7 +45,7 @@ class TestHasMxRecord:
         monkeypatch.setattr(validation, "_resolve_mx", fake_resolver)
         assert validation.has_mx_record("example.com")
 
-    def test_domain_without_mx_record(self, monkeypatch):
+    def test_domain_without_mx_record(self, monkeypatch, db):
         """Domain with no MX records should return False."""
         def fake_resolver(domain):
             return []

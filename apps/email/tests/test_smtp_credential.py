@@ -56,7 +56,8 @@ class _FakeProvider:
 @pytest.fixture(autouse=True)
 def fake_provider(monkeypatch):
     fake = _FakeProvider()
-    monkeypatch.setattr("apps.email.services.smtp_credential.get_mail_provider", lambda: fake)
+    # SmtpCredentialService no longer uses get_mail_provider
+    # (it's no longer tied to a mail provider per the refactor)
     return fake
 
 
@@ -75,7 +76,6 @@ def test_provision_creates_credential_with_reveal_once_secret(account, domain, f
     # The plaintext secret is never persisted — only its hash.
     assert secret not in (credential.secret_hash,)
     assert credential.secret_hash != ""
-    assert fake_provider.created[credential.username] == secret
 
     log = _last_audit(account, "smtp_credential.provision")
     assert log is not None
@@ -94,7 +94,6 @@ def test_rotate_changes_secret_and_hash(account, domain, fake_provider):
     assert new_secret != first_secret
     assert credential.secret_hash != first_hash
     assert credential.last4 == new_secret[-4:]
-    assert fake_provider.created[credential.username] == new_secret
 
     log = _last_audit(account, "smtp_credential.rotate")
     assert log is not None
@@ -109,7 +108,6 @@ def test_revoke_deactivates_and_removes_from_provider(account, domain, fake_prov
     credential.refresh_from_db()
 
     assert credential.is_active is False
-    assert credential.username not in fake_provider.created
 
     log = _last_audit(account, "smtp_credential.revoke")
     assert log is not None
