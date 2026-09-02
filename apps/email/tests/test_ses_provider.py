@@ -118,7 +118,8 @@ class SesProviderTests(TestCase):
             self.assertIsNotNone(dkim)
             self.assertEqual(dkim.selector, "token123")
             self.assertEqual(dkim.public_key_txt, "token123.dkim.amazonses.com")
-            self.assertTrue(dkim.is_cname)
+            self.assertEqual(dkim.record_name, "token123._domainkey.example.com")
+            self.assertEqual(dkim.algorithm, "rsa-sha256")
 
     def test_get_dkim_records_returns_all_tokens(self):
         domain = "example.com"

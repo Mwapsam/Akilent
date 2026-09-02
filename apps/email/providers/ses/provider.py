@@ -112,22 +112,18 @@ class SesProvider(EmailProvider):
         tokens = (response.get("DkimAttributes") or {}).get("Tokens") or []
         records: list[DkimRecord] = []
         for token in tokens:
-            cname_name = f"{token}._domainkey.{domain}"
+            record_name = f"{token}._domainkey.{domain}"
             cname_value = f"{token}.dkim.amazonses.com"
-            # selector = token so callers that build
-            # f"{selector}._domainkey.{domain}" get the correct name.
-            # Include name= only if DkimRecord defines that field.
             records.append(
                 DkimRecord(
                     selector=token,
+                    algorithm="rsa-sha256",
                     public_key_txt=cname_value,
-                    is_cname=True,
-                    # Uncomment if your DkimRecord supports it:
-                    # name=cname_name,
+                    record_name=record_name,
                 )
             )
             logger.debug(
-                "SES DKIM CNAME for %s: %s -> %s", domain, cname_name, cname_value
+                "SES DKIM CNAME for %s: %s -> %s", domain, record_name, cname_value
             )
         return records
 
