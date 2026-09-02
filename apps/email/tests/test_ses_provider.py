@@ -8,7 +8,40 @@ except ImportError:
 import boto3
 from django.test import TestCase
 from apps.email.providers.ses.provider import SesProvider
+from apps.email.types import DomainInfo, DkimRecord, OperationResult
 from unittest.mock import patch
+
+
+class _ConcreteSesProvider(SesProvider):
+    """Concrete implementation for testing (SesProvider is now abstract)."""
+
+    def get_domain(self, domain: str) -> DomainInfo:
+        """Not implemented for SES provider (SES doesn't support domain metadata queries)."""
+        raise NotImplementedError("SES provider doesn't support get_domain")
+
+    def list_domains(self) -> list[DomainInfo]:
+        """Not implemented for SES provider."""
+        raise NotImplementedError("SES provider doesn't support list_domains")
+
+    def update_domain(self, domain: str, **kwargs) -> DomainInfo:
+        """Not implemented for SES provider."""
+        raise NotImplementedError("SES provider doesn't support update_domain")
+
+    def delete_domain(self, domain: str) -> OperationResult:
+        """Not implemented for SES provider."""
+        raise NotImplementedError("SES provider doesn't support delete_domain")
+
+    def set_domain_active(self, domain: str, *, active: bool) -> OperationResult:
+        """Not implemented for SES provider."""
+        raise NotImplementedError("SES provider doesn't support set_domain_active")
+
+    def provision_dkim(self, domain: str, **kwargs) -> DkimRecord:
+        """SES Easy DKIM is auto-provisioned; return existing DKIM record."""
+        return self.get_dkim(domain, **kwargs)
+
+    def rotate_dkim(self, domain: str, **kwargs) -> DkimRecord:
+        """Not implemented for SES provider."""
+        raise NotImplementedError("SES provider doesn't support rotate_dkim")
 
 
 class SesProviderTests(TestCase):
@@ -23,7 +56,7 @@ class SesProviderTests(TestCase):
         self.addCleanup(self.mock_aws.stop)
 
         self.ses_client = boto3.client("sesv2", region_name="us-east-1")
-        self.provider = SesProvider()
+        self.provider = _ConcreteSesProvider()
 
     def test_create_domain(self):
         domain = "example.com"
