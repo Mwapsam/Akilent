@@ -117,7 +117,7 @@ class SesProviderTests(TestCase):
             dkim = self.provider.get_dkim(domain)
             self.assertIsNotNone(dkim)
             self.assertEqual(dkim.selector, "token123")
-            self.assertEqual(dkim.public_key, "token123.dkim.amazonses.com")
+            self.assertEqual(dkim.public_key_txt, "token123.dkim.amazonses.com")
             self.assertTrue(dkim.is_cname)
 
     def test_get_dkim_records_returns_all_tokens(self):
@@ -132,7 +132,7 @@ class SesProviderTests(TestCase):
             records = self.provider.get_dkim_records(domain)
             self.assertEqual(len(records), 3)
             self.assertEqual(
-                [r.public_key for r in records],
+                [r.public_key_txt for r in records],
                 [
                     "token123.dkim.amazonses.com",
                     "token456.dkim.amazonses.com",

@@ -120,7 +120,7 @@ class SesProvider(EmailProvider):
             records.append(
                 DkimRecord(
                     selector=token,
-                    public_key=cname_value,
+                    public_key_txt=cname_value,
                     is_cname=True,
                     # Uncomment if your DkimRecord supports it:
                     # name=cname_name,
