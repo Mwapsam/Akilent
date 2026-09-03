@@ -1,9 +1,10 @@
 /*
  * Guided bulk-campaign wizard (see templates/email/campaigns.html).
  *
- * Registers an Alpine component, `campaignWizard`, that walks a non-technical
- * user through four steps — Message, Recipients, Sender, Review — instead of
- * the old single raw form. Config (verified domains, saved templates, the
+ * Exposes `window.campaignWizard`, the Alpine factory behind
+ * `x-data="campaignWizard()"`, that walks a non-technical user through four
+ * steps — Message, Recipients, Sender, Review — instead of the old single
+ * raw form. Config (verified domains, saved templates, the
  * send-test URL, CSRF token, and any re-render form_data/errors) is read from
  * the #campaign-wizard-config JSON script tag.
  *
@@ -77,7 +78,7 @@
     return { headers: headers, rows: rows, emailKey: emailKey, variables: variables };
   }
 
-  function component() {
+  function campaignWizard() {
     var cfg = { verifiedDomains: [], templates: [], formData: {}, errors: {} };
     var el = document.getElementById("campaign-wizard-config");
     if (el) {
@@ -303,7 +304,7 @@
     };
   }
 
-  document.addEventListener("alpine:init", function () {
-    window.Alpine.data("campaignWizard", component);
-  });
+  // Exposed as a global factory so `x-data="campaignWizard()"` resolves no
+  // matter how this script and Alpine's own (deferred) script interleave.
+  window.campaignWizard = campaignWizard;
 })();

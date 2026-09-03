@@ -32,8 +32,9 @@
 
 {# ── Guided campaign wizard ─────────────────────────────────────────────── #}
 {{ wizard_config|json_script:"campaign-wizard-config" }}
+<script src="/static/js/campaign-wizard.js"></script>
 
-<div class="card card-pad mb-6" x-data="campaignWizard" x-cloak>
+<div class="card card-pad mb-6" x-data="campaignWizard()">
   <h2 class="font-semibold">New campaign</h2>
 
   {# Progress steps #}
@@ -141,7 +142,7 @@
     </div>
 
     {# ── Step 2 — Recipients ──────────────────────────────────────────── #}
-    <div x-show="step === 1" class="grid gap-4">
+    <div x-show="step === 1" x-cloak class="grid gap-4">
       <div class="flex flex-wrap gap-2 text-sm">
         <button type="button" class="btn btn-sm" :class="recipientMethod === 'csv' ? 'btn-primary' : 'btn-secondary'" @click="selectMethod('csv')">Upload a CSV</button>
         <button type="button" class="btn btn-sm" :class="recipientMethod === 'paste' ? 'btn-primary' : 'btn-secondary'" @click="selectMethod('paste')">Paste email addresses</button>
@@ -199,7 +200,7 @@
     </div>
 
     {# ── Step 3 — From ────────────────────────────────────────────────── #}
-    <div x-show="step === 2" class="grid gap-3">
+    <div x-show="step === 2" x-cloak class="grid gap-3">
       <template x-if="hasDomains">
         <div class="grid gap-2">
           <label class="label" for="id_from_local">Send from</label>
@@ -230,7 +231,7 @@
     </div>
 
     {# ── Step 4 — Review ──────────────────────────────────────────────── #}
-    <div x-show="step === 3" class="grid gap-4">
+    <div x-show="step === 3" x-cloak class="grid gap-4">
       <dl class="rounded-xl border border-border divide-y divide-gray-100 text-sm">
         <div class="flex justify-between gap-4 px-4 py-3">
           <dt class="text-gray-500">From</dt><dd class="font-medium text-right" x-text="fromEmail"></dd>
@@ -274,7 +275,6 @@
 </div>
 
 {% include "email/_preview_modal.html" %}
-<script src="/static/js/campaign-wizard.js"></script>
 
 {# Campaigns list #}
 <div class="table-wrap">
