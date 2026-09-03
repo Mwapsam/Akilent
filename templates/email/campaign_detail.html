@@ -13,42 +13,42 @@
 
 {% block content %}
 
-<div class="card card-pad mb-6" id="campaign-progress" data-poll-url="/email/campaigns/{{ campaign.pk }}/">
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-    <div>
-      <p class="text-2xl font-semibold" data-field="recipient_count">{{ campaign.recipient_count }}</p>
-      <p class="text-xs text-gray-500 mt-1">Recipients</p>
-    </div>
-    <div>
-      <p class="text-2xl font-semibold" data-field="queued_count">{{ campaign.queued_count }}</p>
-      <p class="text-xs text-gray-500 mt-1">Queued</p>
-    </div>
-    <div>
-      <p class="text-2xl font-semibold text-green-600" data-field="sent_count">{{ campaign.sent_count }}</p>
-      <p class="text-xs text-gray-500 mt-1">Sent</p>
-    </div>
-    <div>
-      <p class="text-2xl font-semibold text-red-600" data-field="failed_count">{{ campaign.failed_count }}</p>
-      <p class="text-xs text-gray-500 mt-1">Failed</p>
-    </div>
+<div class="card card-pad mb-6" id="campaign-progress"
+     data-poll-url="/email/campaigns/{{ campaign.pk }}/"
+     data-status="{{ campaign.status }}">
+  <div class="flex items-center justify-between gap-3">
+    <p class="text-sm font-medium" data-field="status-label">Loading…</p>
+    <p class="text-sm text-gray-500">
+      <span data-field="done-count">{{ campaign.sent_count|add:campaign.failed_count }}</span>
+      of
+      <span data-field="recipient_count">{{ campaign.recipient_count }}</span>
+      processed
+    </p>
   </div>
-  <p class="text-sm text-gray-600 mt-4 text-center">
-    Status: <span class="badge badge-neutral" data-field="status">{{ campaign.get_status_display }}</span>
-  </p>
+
+  <div class="mt-3 h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+    <div class="h-2 rounded-full bg-brand-600 transition-[width] duration-500" data-field="progress-bar" style="width: 0%"></div>
+  </div>
+
+  <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+    <span><span class="font-semibold text-green-600" data-field="sent_count">{{ campaign.sent_count }}</span> delivered</span>
+    <span><span class="font-semibold text-red-600" data-field="failed_count">{{ campaign.failed_count }}</span> failed</span>
+    <span><span class="font-semibold" data-field="queued_count">{{ campaign.queued_count }}</span> waiting</span>
+  </div>
 </div>
 
 <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Recipient</th><th>Status</th><th>Error</th></tr></thead>
+    <thead><tr><th>Recipient</th><th>Status</th><th>What happened</th></tr></thead>
     <tbody>
       {% for r in recipients %}
       <tr>
         <td>{{ r.to_email }}</td>
         <td>
-          {% if r.status == 'sent' %}<span class="badge badge-success">Sent</span>
+          {% if r.status == 'sent' %}<span class="badge badge-success">Delivered</span>
           {% elif r.status == 'failed' %}<span class="badge badge-danger">Failed</span>
-          {% elif r.status == 'queued' %}<span class="badge badge-warning">Queued</span>
-          {% else %}<span class="badge badge-neutral">Pending</span>{% endif %}
+          {% elif r.status == 'queued' %}<span class="badge badge-warning">Sending</span>
+          {% else %}<span class="badge badge-neutral">Waiting</span>{% endif %}
         </td>
         <td class="text-xs text-red-600">{{ r.error|truncatechars:120 }}</td>
       </tr>
@@ -63,23 +63,51 @@
   if (!el) return;
   var url = el.dataset.pollUrl;
   var terminal = ["completed", "failed", "cancelled"];
+
+  var LABELS = {
+    draft: "Draft",
+    queued: "Waiting to start",
+    sending: "Sending…",
+    paused: "Paused",
+    completed: "All emails sent",
+    failed: "Something went wrong",
+    cancelled: "Cancelled",
+  };
+
+  function paint(data) {
+    Object.keys(data).forEach(function (key) {
+      var field = el.querySelector('[data-field="' + key + '"]');
+      if (field) field.textContent = data[key];
+    });
+
+    var total = Number(data.recipient_count) || 0;
+    var done = (Number(data.sent_count) || 0) + (Number(data.failed_count) || 0);
+    var pct = total ? Math.round((done / total) * 100) : (terminal.indexOf(data.status) !== -1 ? 100 : 0);
+
+    var bar = el.querySelector('[data-field="progress-bar"]');
+    if (bar) bar.style.width = pct + "%";
+    var doneCount = el.querySelector('[data-field="done-count"]');
+    if (doneCount) doneCount.textContent = done;
+
+    var label = LABELS[data.status] || data.status;
+    if (data.status === "completed" && Number(data.failed_count) > 0) {
+      label = "Finished — " + data.failed_count + " couldn't be delivered";
+    }
+    var labelEl = el.querySelector('[data-field="status-label"]');
+    if (labelEl) labelEl.textContent = label;
+  }
+
   function poll() {
     fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        Object.keys(data).forEach(function (key) {
-          var field = el.querySelector('[data-field="' + key + '"]');
-          if (field) field.textContent = data[key];
-        });
-        if (terminal.indexOf(data.status) === -1) {
-          setTimeout(poll, 3000);
-        }
+        paint(data);
+        if (terminal.indexOf(data.status) === -1) setTimeout(poll, 3000);
       })
       .catch(function () {});
   }
-  if (terminal.indexOf("{{ campaign.status }}") === -1) {
-    setTimeout(poll, 3000);
-  }
+
+  poll();
 })();
 </script>
 

@@ -1186,27 +1186,75 @@ def _parse_recipients_csv(uploaded_file) -> list[dict]:
     return recipients
 
 
-@login_required
-def campaigns_list(request):
+def _parse_recipients_text(raw: str) -> list[dict]:
+    """Parse a pasted list of bare email addresses (newline / comma / space separated)."""
+    import re
+
+    seen: set[str] = set()
+    recipients: list[dict] = []
+    for token in re.split(r"[\s,;]+", raw or ""):
+        email = token.strip().strip("<>").lower()
+        if not email or "@" not in email or email in seen:
+            continue
+        seen.add(email)
+        recipients.append({"to": email, "variables": {}})
+    return recipients
+
+
+def _render_campaigns_page(request, account, admin, *, form_data=None, errors=None, status=200):
+    """Shared render for the campaigns page — used by the list view and by
+    campaign_create when it needs to re-show the form with validation errors
+    instead of redirecting (which would throw away everything the user typed)."""
     from apps.billing.limits import LimitChecker
     from apps.email.models import BulkEmailCampaign, EmailTemplate
 
-    admin = _is_admin(request)
-    account = get_current_account(request)
-    if account is None and not admin:
-        return redirect("dashboard")
-
     bulk_enabled = admin or (account and LimitChecker(account).has_feature("bulk_email"))
     campaigns = _scoped(BulkEmailCampaign.objects, request, account)[:50]
-    templates = _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
+    templates = list(
+        _scoped(EmailTemplate.objects, request, account).filter(is_active=True)
+    )
+    verified_domains = list(
+        _scoped(EmailDomain.objects, request, account).filter(
+            status=EmailDomain.Status.VERIFIED
+        )
+    )
+    wizard_config = {
+        "verifiedDomains": [d.domain for d in verified_domains],
+        "templates": [
+            {
+                "id": t.pk,
+                "name": t.name,
+                "variables": list((t.sample_variables or {}).keys()),
+            }
+            for t in templates
+        ],
+        "sendTestUrl": "/email/campaigns/send-test/",
+        "sampleCsvUrl": "/email/campaigns/sample.csv",
+        "csrfToken": get_token(request),
+        "formData": form_data or {},
+        "errors": errors or {},
+    }
 
     return render(request, "email/campaigns.html", {
         "account": account,
         "is_admin": admin,
         "campaigns": campaigns,
         "templates": templates,
+        "verified_domains": verified_domains,
         "bulk_enabled": bulk_enabled,
-    })
+        "errors": errors or {},
+        "wizard_config": wizard_config,
+    }, status=status)
+
+
+@login_required
+def campaigns_list(request):
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    return _render_campaigns_page(request, account, admin)
 
 
 @login_required
@@ -1231,14 +1279,32 @@ def campaign_create(request):
     text_body = request.POST.get("text_body") or ""
     html_body = request.POST.get("html_body") or ""
 
+    form_data = {
+        "mode": request.POST.get("mode") or "text",
+        "from_local": request.POST.get("from_local") or "",
+        "from_domain": request.POST.get("from_domain") or "",
+        "template_id": template_id or "",
+        "subject": subject,
+        "text_body": text_body,
+        "recipients_text": request.POST.get("recipients_text") or "",
+        "recipients_json": request.POST.get("recipients_json") or "",
+    }
+    errors: dict[str, str] = {}
+
     recipients: list[dict] = []
     uploaded = request.FILES.get("recipients_csv")
+    recipients_text = (request.POST.get("recipients_text") or "").strip()
     if uploaded:
         try:
             recipients = _parse_recipients_csv(uploaded)
         except Exception:
-            messages.error(request, "Could not parse the uploaded CSV file.")
-            return redirect("email-campaigns")
+            errors["recipients"] = (
+                "We couldn't read that CSV. Make sure it's a plain .csv file with a header row."
+            )
+    elif recipients_text:
+        recipients = _parse_recipients_text(recipients_text)
+        if not recipients:
+            errors["recipients"] = "We couldn't find any email addresses in that list."
     else:
         raw_json = request.POST.get("recipients_json") or "[]"
         try:
@@ -1248,34 +1314,127 @@ def campaign_create(request):
                 for r in parsed
                 if r.get("to")
             ]
-        except json.JSONDecodeError:
-            messages.error(request, "Recipients JSON is invalid.")
-            return redirect("email-campaigns")
+        except (json.JSONDecodeError, AttributeError):
+            errors["recipients"] = "The advanced recipient list isn't valid JSON."
 
     if not from_email:
-        messages.error(request, "A from address is required.")
-        return redirect("email-campaigns")
-    if not recipients:
-        messages.error(request, "At least one recipient is required.")
-        return redirect("email-campaigns")
+        errors["from_email"] = "Choose an address to send this campaign from."
+    if not recipients and "recipients" not in errors:
+        errors["recipients"] = "Add at least one recipient."
+
+    if not errors:
+        try:
+            create_and_queue_campaign(
+                account=account,
+                from_email=from_email,
+                template_id=int(template_id) if template_id else None,
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+                recipients=recipients,
+            )
+        except UnverifiedDomainError as exc:
+            errors["from_email"] = str(exc)
+        except (PlanLimitExceeded, RecipientCapExceededError, TemplateMissingContentError) as exc:
+            errors["form"] = str(exc)
+        else:
+            messages.success(request, "Campaign queued.")
+            return redirect("email-campaigns")
+
+    return _render_campaigns_page(
+        request, account, admin, form_data=form_data, errors=errors, status=400
+    )
+
+
+@login_required
+@require_POST
+def campaign_send_test(request):
+    """Send a one-off preview of an in-progress campaign to the logged-in user.
+
+    to_email is always request.user.email — never client-supplied — so this
+    can't be turned into an open relay. Mirrors template_send_test but also
+    accepts an inline (plain-text) draft, which is what the campaign wizard
+    sends when the user isn't using a saved template.
+    """
+    from types import SimpleNamespace
+
+    from django.core.cache import cache
+
+    from apps.api.services import create_and_queue_message
+    from apps.billing.limits import PlanLimitExceeded
+    from apps.email.exceptions import UnverifiedDomainError
+    from apps.email.models import EmailTemplate
+    from apps.email.services import render_template
+
+    account = get_current_account(request)
+    if account is None:
+        return _ajax_error("Select an account first.")
+    if not request.user.email:
+        return _ajax_error("Your account has no email address to send a test to.")
+
+    cooldown_key = f"campaign_send_test_cooldown:{request.user.id}"
+    if cache.get(cooldown_key):
+        return _ajax_error("Please wait a few seconds before sending another test.", status=429)
 
     try:
-        create_and_queue_campaign(
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    from_email = (payload.get("from_email") or "").strip()
+    variables = payload.get("variables") or {}
+    template_id = payload.get("template_id")
+
+    if template_id:
+        try:
+            template = _scoped(EmailTemplate.objects, request, account).get(pk=int(template_id))
+        except (EmailTemplate.DoesNotExist, ValueError, TypeError):
+            return _ajax_error("Pick a valid template first.")
+        variables = variables or template.sample_variables
+        subject, text_body, html_body = render_template(template, variables)
+    else:
+        draft = SimpleNamespace(
+            subject=payload.get("subject", ""),
+            text_body=payload.get("text_body", ""),
+            html_body=payload.get("html_body", ""),
+        )
+        if not (draft.subject or draft.text_body):
+            return _ajax_error("Add a subject and message before sending a test.")
+        subject, text_body, html_body = render_template(draft, variables)
+
+    if not from_email:
+        domain = EmailDomain.objects.filter(
+            account=account, status=EmailDomain.Status.VERIFIED
+        ).first()
+        if domain is None:
+            return _ajax_error("Verify a sending domain first.")
+        from_email = f"test@{domain.domain}"
+
+    try:
+        create_and_queue_message(
             account=account,
             from_email=from_email,
-            template_id=int(template_id) if template_id else None,
+            to_email=request.user.email,
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            recipients=recipients,
         )
-    except UnverifiedDomainError as exc:
-        messages.error(request, str(exc))
-    except (PlanLimitExceeded, RecipientCapExceededError, TemplateMissingContentError) as exc:
-        messages.error(request, str(exc))
-    else:
-        messages.success(request, "Campaign queued.")
-    return redirect("email-campaigns")
+    except UnverifiedDomainError as e:
+        return _ajax_error(str(e))
+    except PlanLimitExceeded as e:
+        return _ajax_error(str(e), status=403)
+
+    cache.set(cooldown_key, True, timeout=30)
+    return JsonResponse({"status": "queued"}, status=202)
+
+
+@login_required
+def campaign_sample_csv(request):
+    """A tiny example recipients file the wizard links to as 'Download sample CSV'."""
+    sample = "to,first_name\nada@example.com,Ada\ngrace@example.com,Grace\n"
+    response = HttpResponse(sample, content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="campaign-recipients-sample.csv"'
+    return response
 
 
 @login_required
