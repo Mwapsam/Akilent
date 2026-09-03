@@ -347,25 +347,9 @@ def drain_outbound_queue():
         .select_related("account", "contact")[:_OUTBOUND_BATCH]
     )
 
-    sent = failed = skipped = 0
+    sent = failed = 0
     providers: dict = {}
     for msg in due:
-        # Idempotency: never re-send if a sibling with the same key already went out.
-        if msg.idempotency_key and (
-            OutboundMessage.objects.filter(
-                account_id=msg.account_id,
-                idempotency_key=msg.idempotency_key,
-                status=OutboundMessage.Status.SENT,
-            )
-            .exclude(pk=msg.pk)
-            .exists()
-        ):
-            msg.status = OutboundMessage.Status.CANCELLED
-            msg.last_error = "Duplicate idempotency_key; sibling already sent."
-            msg.save(update_fields=["status", "last_error"])
-            skipped += 1
-            continue
-
         try:
             provider = providers.get(msg.account_id)
             if provider is None:
@@ -405,11 +389,8 @@ def drain_outbound_queue():
                 )
             failed += 1
 
-    if sent or failed or skipped:
-        logger.info(
-            "drain_outbound_queue: sent=%s failed=%s skipped=%s",
-            sent, failed, skipped,
-        )
+    if sent or failed:
+        logger.info("drain_outbound_queue: sent=%s failed=%s", sent, failed)
 
 
 @shared_task

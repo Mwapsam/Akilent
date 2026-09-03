@@ -85,12 +85,20 @@ def send_message(
     Raises:
         Account.DoesNotExist: if account is not valid
     """
-    msg = OutboundMessage.objects.create(
+    key = idempotency_key or uuid.uuid4().hex
+    msg, created = OutboundMessage.objects.get_or_create(
         account=account,
-        contact=contact,
-        payload={"type": message_type, "body": text},
-        idempotency_key=idempotency_key or uuid.uuid4().hex,
+        idempotency_key=key,
+        defaults={
+            "contact": contact,
+            "payload": {"type": message_type, "body": text},
+        },
     )
+    if not created:
+        # A message with this idempotency key already exists — return it
+        # unchanged rather than double-sending.
+        return msg
+
     # Enqueue for delivery
     from apps.whatsapp.tasks import drain_outbound_queue
     drain_outbound_queue.delay()
