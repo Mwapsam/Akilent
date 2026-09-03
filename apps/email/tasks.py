@@ -48,6 +48,14 @@ _WEBHOOK_TIMEOUT_SECONDS = 10
 
 _CAMPAIGN_CHUNK_SIZE = 500
 
+# FAILED-spike alerting — a high share of terminal sends failing over a short
+# window points at an infra/provider problem (bad credentials, SES pause, relay
+# down), distinct from per-account bounce reputation.
+_FAILURE_SPIKE_WINDOW_MINUTES = 60
+_FAILURE_SPIKE_MIN_VOLUME = 50
+_FAILURE_SPIKE_THRESHOLD = 0.20  # 20% of terminal sends FAILED
+_FAILURE_SPIKE_ALERT_COOLDOWN_SECONDS = 3600
+
 
 def _exponential_backoff_delay(retry_count: int, base: int = _RETRY_DELAY_BASE, multiplier: int = _RETRY_DELAY_MULTIPLIER) -> int:
     """Calculate exponential backoff delay: base * (multiplier ** retry_count).
@@ -560,6 +568,57 @@ def prune_tracking_tokens() -> int:
     deleted, _ = EmailTrackingToken.objects.filter(created_at__lt=cutoff).delete()
     logger.info("prune_tracking_tokens: deleted %d stale tokens", deleted)
     return deleted
+
+
+@shared_task(queue="celery")
+def alert_on_failure_spike() -> dict:
+    """Page operators when the recent send-failure rate spikes.
+
+    Complements the per-account reputation breaker (which watches bounces):
+    this watches *send* failures — provider outages, bad SES credentials, an
+    SES account pause — across the whole platform over a short window.
+    """
+    from datetime import timedelta
+
+    from django.core.cache import cache
+
+    since = timezone.now() - timedelta(minutes=_FAILURE_SPIKE_WINDOW_MINUTES)
+    terminal = EmailMessage.objects.filter(
+        created_at__gte=since,
+        status__in=[
+            EmailMessage.Status.SENT,
+            EmailMessage.Status.DELIVERED,
+            EmailMessage.Status.FAILED,
+        ],
+    )
+    total = terminal.count()
+    failed = terminal.filter(status=EmailMessage.Status.FAILED).count()
+    rate = (failed / total) if total else 0.0
+    result = {"total": total, "failed": failed, "rate": round(rate, 4), "alerted": False}
+
+    if total < _FAILURE_SPIKE_MIN_VOLUME or rate < _FAILURE_SPIKE_THRESHOLD:
+        return result
+
+    if cache.get("email_failure_spike_alerted"):
+        return result  # within cooldown — don't re-page
+    cache.set("email_failure_spike_alerted", "1", _FAILURE_SPIKE_ALERT_COOLDOWN_SECONDS)
+    result["alerted"] = True
+
+    logger.error(
+        "EMAIL FAILURE SPIKE: %d/%d terminal sends FAILED (%.1f%%) in the last %d min",
+        failed, total, rate * 100, _FAILURE_SPIKE_WINDOW_MINUTES,
+    )
+    try:
+        from apps.billing.slack import post_message
+
+        post_message(
+            f":rotating_light: Email failure spike — {failed}/{total} sends FAILED "
+            f"({rate:.0%}) in the last {_FAILURE_SPIKE_WINDOW_MINUTES} min. Check the "
+            f"send provider / SES account status."
+        )
+    except Exception:
+        logger.exception("failure-spike Slack alert failed")
+    return result
 
 
 @shared_task(queue="celery")

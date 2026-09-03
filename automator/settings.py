@@ -368,6 +368,7 @@ CELERY_TASK_ROUTES = {
     "apps.email.tasks.prune_tracking_tokens": {"queue": "celery"},
     "apps.email.tasks.prune_provisioning_jobs": {"queue": "celery"},
     "apps.email.tasks.reverify_pending_domains": {"queue": "celery"},
+    "apps.email.tasks.alert_on_failure_spike": {"queue": "celery"},
 }
 
 CELERY_BEAT_SCHEDULE = {
@@ -390,6 +391,10 @@ CELERY_BEAT_SCHEDULE = {
     "reverify-pending-domains": {
         "task": "apps.email.tasks.reverify_pending_domains",
         "schedule": 900.0,  # every 15 min — pick up customer DNS changes
+    },
+    "alert-on-failure-spike": {
+        "task": "apps.email.tasks.alert_on_failure_spike",
+        "schedule": 900.0,  # every 15 min
     },
 }
 
