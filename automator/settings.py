@@ -337,6 +337,14 @@ CACHES = {
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@rabbitmq:5672//")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+
+# Shared Redis used for the distributed SES send rate limiter (falls back to the
+# cache URL, then the Celery result backend). If none resolve to a redis:// URL
+# the limiter degrades to a per-process token bucket.
+REDIS_URL = os.getenv(
+    "REDIS_URL",
+    os.getenv("REDIS_CACHE_URL", CELERY_RESULT_BACKEND),
+)
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"

@@ -6,20 +6,24 @@
   <thead><tr><th>Record</th><th>Type</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><strong>Verification</strong></td><td>TXT</td><td>Proves you own the domain so we can switch it on.</td></tr>
-    <tr><td><strong>DKIM</strong></td><td>TXT</td><td>Cryptographically signs your mail so receivers can trust it wasn't tampered with.</td></tr>
+    <tr><td><strong>DKIM</strong></td><td>TXT <em>or</em> CNAME</td><td>Cryptographically signs your mail so receivers can trust it wasn't tampered with.</td></tr>
     <tr><td><strong>SPF</strong></td><td>TXT</td><td>Lists the servers allowed to send for your domain.</td></tr>
     <tr><td><strong>DMARC</strong></td><td>TXT</td><td>Tells receivers what to do with mail that fails the checks above.</td></tr>
   </tbody>
 </table>
-<div class="note">Each record has a <strong>Name</strong> (sometimes called Host) and a <strong>Value</strong> (sometimes Content or Data). Use the copy buttons on the domain card so nothing gets mistyped.</div>
+<div class="note">Each record has a <strong>Name</strong> (sometimes called Host) and a <strong>Value</strong> (sometimes Content or Data). Use the copy buttons on the domain card so nothing gets mistyped — the card always shows the exact <strong>Type</strong> for every record.</div>
+
+<div class="note"><strong>DKIM comes in two shapes.</strong> Depending on how your account sends mail, the domain card shows DKIM either as a single <strong>TXT</strong> record or as <strong>three CNAME</strong> records ending in <code>.dkim.amazonses.com</code>. Add exactly what the card shows — all three CNAMEs if there are three. Verification only passes once every DKIM record is live.</div>
 
 <h2>General steps</h2>
 <ol>
   <li>Sign in to wherever your domain's DNS is managed (your registrar or DNS host).</li>
   <li>Find the DNS / DNS records / Zone editor section.</li>
-  <li>For each record on the domain card, add a new record with type <strong>TXT</strong>, paste the <strong>Name</strong> and <strong>Value</strong>, and save.</li>
+  <li>For each record on the domain card, add a new record with the <strong>Type</strong> shown (TXT or CNAME), paste the <strong>Name</strong> and <strong>Value</strong>, and save.</li>
   <li>Leave TTL at the default (or "Automatic").</li>
 </ol>
+
+<div class="note">For CNAME DKIM records, make sure your DNS host isn't "proxying" them (on Cloudflare, set the record to <em>DNS only</em> / grey cloud) — a proxied CNAME won't resolve to the value we check for.</div>
 
 <h2>Provider-specific notes</h2>
 

@@ -128,10 +128,12 @@ def smtp_send(
     subject: str,
     text_body: str = "",
     html_body: str = "",
+    headers: dict[str, str] | None = None,
 ) -> str:
     """Send one email through the configured SMTP relay (Stalwart submission port).
 
     Returns the local Message-ID. Raises on failure (caller logs/marks failed).
+    ``headers`` are added verbatim (e.g. List-Unsubscribe / List-Unsubscribe-Post).
     """
     connection = get_connection(
         host=settings.EMAIL_HOST,
@@ -146,6 +148,7 @@ def smtp_send(
         from_email=from_email,
         to=[to_email],
         connection=connection,
+        headers=headers or None,
     )
     if html_body:
         msg.attach_alternative(html_body, "text/html")

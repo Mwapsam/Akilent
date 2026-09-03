@@ -604,6 +604,7 @@ class BulkEmailCampaign(models.Model):
         DRAFT = "draft", "Draft"
         QUEUED = "queued", "Queued"
         SENDING = "sending", "Sending"
+        PAUSED = "paused", "Paused"
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
@@ -652,6 +653,12 @@ class BulkEmailCampaign(models.Model):
         self.status = self.Status.COMPLETED
         self.completed_at = timezone.now()
         self.save(update_fields=["status", "completed_at"])
+
+    def mark_paused(self, reason: str = "") -> None:
+        self.status = self.Status.PAUSED
+        if reason:
+            self.error = reason[:5000]
+        self.save(update_fields=["status", "error"])
 
     def increment_counts(self, *, queued=0, sent=0, failed=0) -> None:
         updates = []
@@ -1011,3 +1018,63 @@ class SuppressionListEntry(models.Model):
 
     def __str__(self):
         return f"{self.email} ({self.get_reason_display()})"
+
+
+class SendReputation(models.Model):
+    """Rolling bounce / complaint counters per account, with a circuit breaker.
+
+    Counters accumulate over a trailing window (``MailProviderSettings.
+    reputation_window_hours``) and reset when the window rolls over. When the
+    bounce or complaint rate crosses the configured halt threshold the account's
+    non-system sends are blocked until an operator resets it — this is what
+    keeps one tenant's bad list from getting the whole SES account suspended.
+    """
+
+    class State(models.TextChoices):
+        OK = "ok", "OK"
+        WARNED = "warned", "Warned"
+        HALTED = "halted", "Halted"
+
+    account = models.OneToOneField(
+        "accounts.Account", on_delete=models.CASCADE, related_name="send_reputation"
+    )
+    window_started_at = models.DateTimeField(auto_now_add=True)
+    sent = models.PositiveIntegerField(default=0)
+    bounced = models.PositiveIntegerField(default=0)
+    complained = models.PositiveIntegerField(default=0)
+
+    state = models.CharField(max_length=10, choices=State.choices, default=State.OK)
+    state_changed_at = models.DateTimeField(auto_now_add=True)
+    halted_reason = models.CharField(max_length=255, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def bounce_rate(self) -> float:
+        return (self.bounced / self.sent) if self.sent else 0.0
+
+    @property
+    def complaint_rate(self) -> float:
+        return (self.complained / self.sent) if self.sent else 0.0
+
+    def __str__(self):
+        return f"{self.account} reputation [{self.state}] b={self.bounce_rate:.3%}"
+
+
+class ProcessedSnsMessage(models.Model):
+    """Durable idempotency ledger for SES/SNS notifications.
+
+    The webhook also keeps a 7-day cache entry as a fast path, but a cache flush
+    would otherwise let SNS re-deliveries replay suppression/status writes. A row
+    here is the authoritative "already handled" record.
+    """
+
+    message_id = models.CharField(max_length=255, primary_key=True)
+    event_type = models.CharField(max_length=40, blank=True, default="")
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["received_at"])]
+
+    def __str__(self):
+        return f"{self.message_id} ({self.event_type or 'unknown'})"

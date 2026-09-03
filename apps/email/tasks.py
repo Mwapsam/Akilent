@@ -110,11 +110,33 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
     ``task`` is the bound Celery task instance (for retry/request.retries).
     """
     from apps.email.services.suppression import is_suppressed
+    from apps.email.services.reputation import check_can_send, record_send
 
     # Final suppression gate before sending (catch-all for race conditions)
     if is_suppressed(msg.account, msg.to_email):
         logger.info("Refusing to send: %s is suppressed", msg.to_email)
         msg.mark_failed("Recipient is suppressed (bounce, complaint, or unsubscribe)")
+        return
+
+    # Reputation circuit breaker — a halted account's marketing/transactional
+    # mail is blocked (system mail goes via send_system_email, which is exempt).
+    # Retrying won't help, so mark failed and return without raising.
+    allowed, reason = check_can_send(msg.account)
+    if not allowed:
+        logger.warning("Reputation halt: dropping send for account=%s (%s)", msg.account_id, reason)
+        msg.mark_failed(f"Sender reputation halt: {reason}")
+        if msg.campaign_id:
+            msg.campaign.increment_counts(failed=1)
+            BulkEmailRecipient.objects.filter(message=msg).update(
+                status=BulkEmailRecipient.Status.FAILED, error=f"Sender reputation halt: {reason}"[:5000]
+            )
+            _maybe_complete_campaign(msg.campaign)
+        try:
+            from apps.billing.limits import LimitChecker
+
+            LimitChecker(msg.account).release_email()
+        except Exception:
+            logger.exception("reputation halt: quota release failed for %s", msg.pk)
         return
 
     if html_body:
@@ -133,6 +155,21 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
         except Exception as exc:
             logger.debug("_send_email_message: tracking injection skipped: %s", exc)
 
+    headers: dict[str, str] = {}
+    if msg.campaign_id:
+        # Bulk / marketing mail: attach RFC 8058 one-click unsubscribe headers
+        # (Gmail/Yahoo 2024 bulk-sender requirement). Never let this block a send.
+        try:
+            from apps.email.services.unsubscribe import build_list_unsubscribe_headers
+
+            headers = build_list_unsubscribe_headers(
+                msg.account, msg.to_email, campaign_id=msg.campaign_id
+            )
+        except Exception:
+            logger.exception(
+                "_send_email_message: List-Unsubscribe header build failed for %s", msg.pk
+            )
+
     try:
         result = get_send_provider().send(OutboundEmail(
             from_email=msg.from_email,
@@ -140,8 +177,10 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
             subject=msg.subject,
             text_body=text_body,
             html_body=html_body,
+            headers=headers,
         ))
         msg.mark_sent(result.provider_message_id)
+        record_send(msg.account)
         if msg.campaign_id:
             msg.campaign.increment_counts(sent=1)
             BulkEmailRecipient.objects.filter(message=msg).update(
@@ -170,6 +209,17 @@ def _send_email_message(task, msg: EmailMessage, text_body: str, html_body: str)
                     status=BulkEmailRecipient.Status.FAILED, error=str(exc)[:5000]
                 )
                 _maybe_complete_campaign(msg.campaign)
+            # Retries are exhausted and the message is permanently failed —
+            # a spike of these is an infra problem, so page the operators.
+            try:
+                from apps.billing.slack import post_message
+
+                post_message(
+                    f":warning: Email send failed after {_MAX_RETRIES} retries — "
+                    f"EmailMessage {msg.pk} (account {msg.account_id}, to {msg.to_email}): {exc}"
+                )
+            except Exception:
+                logger.exception("retry-exhaustion Slack alert failed for %s", msg.pk)
         delay = _exponential_backoff_delay(task.request.retries)
         raise task.retry(exc=exc, countdown=delay)
 
@@ -306,7 +356,19 @@ def dispatch_campaign(self, campaign_id: int) -> None:
     if campaign.status in (
         BulkEmailCampaign.Status.CANCELLED,
         BulkEmailCampaign.Status.COMPLETED,
+        BulkEmailCampaign.Status.PAUSED,
     ):
+        return
+
+    # Reputation circuit breaker — stop fanning out a campaign for a halted
+    # account. It stays PAUSED (with PENDING recipients intact) until an operator
+    # resets reputation and re-dispatches.
+    from apps.email.services.reputation import check_can_send
+
+    allowed, reason = check_can_send(campaign.account)
+    if not allowed:
+        logger.warning("Reputation halt: pausing campaign %s (%s)", campaign.pk, reason)
+        campaign.mark_paused(f"Paused: sender reputation halt — {reason}")
         return
 
     campaign.mark_sending()

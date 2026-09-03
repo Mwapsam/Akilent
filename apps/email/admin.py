@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 
 from apps.email.models import (
     AuditLog,
@@ -9,6 +9,7 @@ from apps.email.models import (
     EmailTemplateAsset,
     EmailTemplateVersion,
     ProvisioningJob,
+    SendReputation,
     SmtpCredential,
     SystemEmailTemplate,
 )
@@ -100,6 +101,44 @@ class ProvisioningJobAdmin(admin.ModelAdmin):
     readonly_fields = (
         "created_at", "started_at", "completed_at", "celery_task_id", "attempts"
     )
+
+
+@admin.register(SendReputation)
+class SendReputationAdmin(admin.ModelAdmin):
+    list_display = (
+        "account", "state", "sent", "bounced", "complained",
+        "bounce_rate", "complaint_rate", "window_started_at", "state_changed_at",
+    )
+    list_filter = ("state",)
+    search_fields = ("account__company_name",)
+    raw_id_fields = ("account",)
+    readonly_fields = (
+        "account", "window_started_at", "sent", "bounced", "complained",
+        "bounce_rate", "complaint_rate", "state", "state_changed_at",
+        "halted_reason", "updated_at",
+    )
+    actions = ["reset_breaker"]
+
+    @admin.display(description="Bounce %")
+    def bounce_rate(self, obj):
+        return f"{obj.bounce_rate:.2%}"
+
+    @admin.display(description="Complaint %")
+    def complaint_rate(self, obj):
+        return f"{obj.complaint_rate:.2%}"
+
+    @admin.action(description="Reset circuit breaker (clear halt, fresh window)")
+    def reset_breaker(self, request, queryset):
+        from apps.email.services.reputation import reset
+
+        for rep in queryset:
+            reset(rep.account)
+        self.message_user(
+            request, f"Reset reputation for {queryset.count()} account(s).", messages.SUCCESS
+        )
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(AuditLog)

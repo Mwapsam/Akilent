@@ -1,12 +1,18 @@
-"""Unsubscribe token generation and management."""
+"""Unsubscribe token generation and RFC 8058 List-Unsubscribe headers."""
+from __future__ import annotations
+
+import logging
 import secrets
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.urls import reverse
 
 if TYPE_CHECKING:
     from apps.accounts.models import Account
     from apps.email.models import BulkEmailCampaign
+
+logger = logging.getLogger(__name__)
 
 
 def create_unsubscribe_token(
@@ -14,13 +20,15 @@ def create_unsubscribe_token(
     email: str,
     campaign: "BulkEmailCampaign | None" = None,
 ) -> str:
-    """Create an unsubscribe token for a recipient.
+    """Create a one-time unsubscribe token for a recipient and return it.
 
-    Returns the token (not the URL). Use get_unsubscribe_url() to get the full URL.
+    Use :func:`get_unsubscribe_url` for the full link, or
+    :func:`build_list_unsubscribe_headers` for the mail headers.
     """
     from apps.email.models import UnsubscribeToken
 
-    token = "unsub_" + secrets.token_urlsafe(48)
+    # token column is max_length=64; "unsub_" (6) + token_urlsafe(32) (~43) fits.
+    token = "unsub_" + secrets.token_urlsafe(32)
     UnsubscribeToken.objects.create(
         token=token,
         account=account,
@@ -30,17 +38,55 @@ def create_unsubscribe_token(
     return token
 
 
-def get_unsubscribe_url(request, token: str) -> str:
-    """Get the full unsubscribe URL for a token."""
-    return request.build_absolute_uri(reverse("email-unsubscribe", args=[token]))
+def _absolute_base() -> str:
+    """Scheme + host for building absolute links from a Celery task (no request)."""
+    base_domain = getattr(settings, "BASE_DOMAIN", "") or (
+        settings.ALLOWED_HOSTS[0] if settings.ALLOWED_HOSTS else "localhost"
+    )
+    scheme = "http" if settings.DEBUG else "https"
+    return f"{scheme}://{base_domain}"
 
 
-def get_unsubscribe_header(request, token: str) -> str:
-    """Get the RFC 8058 List-Unsubscribe header value.
+def get_unsubscribe_url(token: str, request=None) -> str:
+    """Absolute unsubscribe URL for a token.
 
-    Returns: <https://example.com/email/t/unsub/token123/>
-    This header allows bulk-senders to comply with RFC 8058 and Gmail's
-    bulk-sender requirements (2024+).
+    ``request`` is optional — when omitted (Celery tasks) the URL is built from
+    ``settings.BASE_DOMAIN``.
     """
-    url = get_unsubscribe_url(request, token)
-    return f"<{url}>"
+    path = reverse("email-unsubscribe", args=[token])
+    if request is not None:
+        return request.build_absolute_uri(path)
+    return f"{_absolute_base()}{path}"
+
+
+def get_unsubscribe_header(token: str, request=None) -> str:
+    """The ``List-Unsubscribe`` header value for a single https link."""
+    return f"<{get_unsubscribe_url(token, request)}>"
+
+
+def build_list_unsubscribe_headers(
+    account: "Account",
+    email: str,
+    *,
+    campaign: "BulkEmailCampaign | None" = None,
+    campaign_id: int | None = None,
+) -> dict[str, str]:
+    """Mint a token and return the RFC 8058 one-click unsubscribe headers.
+
+    Returns both ``List-Unsubscribe`` (https + mailto) and
+    ``List-Unsubscribe-Post`` so Gmail/Yahoo (2024+) show a one-click
+    unsubscribe control. The https endpoint accepts the POST; the mailto is a
+    fallback for clients that don't do one-click.
+    """
+    if campaign is None and campaign_id is not None:
+        from apps.email.models import BulkEmailCampaign
+
+        campaign = BulkEmailCampaign.objects.filter(pk=campaign_id).first()
+
+    token = create_unsubscribe_token(account, email, campaign=campaign)
+    https = get_unsubscribe_url(token)
+    mailto = getattr(settings, "DEFAULT_FROM_EMAIL", "") or "unsubscribe@localhost"
+    return {
+        "List-Unsubscribe": f"<{https}>, <mailto:{mailto}?subject=unsubscribe>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }

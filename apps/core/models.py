@@ -143,6 +143,30 @@ class MailProviderSettings(models.Model):
         help_text="Number of transient bounces before escalating to hard suppression (default 3)"
     )
 
+    # Reputation circuit breaker — per-account bounce/complaint rate limits.
+    # SES enforcement kicks in around bounce >5% (review) / >10% (pause) and
+    # complaint >0.1% (review) / >0.5% (pause); defaults sit just inside those.
+    reputation_bounce_warn = models.FloatField(
+        default=0.05,
+        help_text="Bounce rate at which an account is flagged (warned) — 0.05 = 5%"
+    )
+    reputation_bounce_halt = models.FloatField(
+        default=0.10,
+        help_text="Bounce rate at which an account's non-system sends are halted — 0.10 = 10%"
+    )
+    reputation_complaint_halt = models.FloatField(
+        default=0.005,
+        help_text="Complaint rate at which an account's non-system sends are halted — 0.005 = 0.5%"
+    )
+    reputation_min_volume = models.PositiveIntegerField(
+        default=100,
+        help_text="Minimum sends in the window before the breaker can act (avoids tiny-sample noise)"
+    )
+    reputation_window_hours = models.PositiveIntegerField(
+        default=24,
+        help_text="Trailing window (hours) over which bounce/complaint rates are measured"
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

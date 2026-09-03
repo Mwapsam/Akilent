@@ -29,3 +29,6 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CACHES = {
     "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
 }
+
+# Force the SES rate limiter onto its in-process fallback (no Redis probe).
+REDIS_URL = ""

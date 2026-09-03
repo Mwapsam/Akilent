@@ -77,6 +77,14 @@ def create_and_queue_message(
     if is_suppressed(account, to_email):
         raise UnverifiedDomainError(f"{to_email} is suppressed (bounce, complaint, or unsubscribe)")
 
+    from apps.email.services.reputation import check_can_send
+
+    allowed, reason = check_can_send(account)
+    if not allowed:
+        raise UnverifiedDomainError(
+            f"sending is paused for this account — sender reputation halt ({reason})"
+        )
+
     if not validate_recipient(to_email):
         record_event(account=account, email=to_email, reason="invalid")
         raise UnverifiedDomainError(f"{to_email} failed validation (invalid syntax or no MX record)")
@@ -206,6 +214,14 @@ def create_and_queue_campaign(
     """
     lc = LimitChecker(account)
     lc.require_feature("bulk_email", "bulk email sending")
+
+    from apps.email.services.reputation import check_can_send
+
+    allowed, reason = check_can_send(account)
+    if not allowed:
+        raise UnverifiedDomainError(
+            f"sending is paused for this account — sender reputation halt ({reason})"
+        )
 
     # require_feature already confirmed an active subscription exists.
     cap = lc.subscription.plan.max_bulk_recipients_per_campaign
