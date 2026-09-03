@@ -744,10 +744,17 @@ def template_create(request):
         messages.error(request, "A name is required.")
         return redirect("email-templates")
 
+    base_slug = (request.POST.get("slug") or "").strip() or slugify(name) or "template"
+    slug = base_slug
+    counter = 2
+    while EmailTemplate.objects.filter(account=account, slug=slug).exists():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
     EmailTemplate.objects.create(
         account=account,
         name=name,
-        slug=(request.POST.get("slug") or "").strip() or slugify(name),
+        slug=slug,
         subject=request.POST.get("subject") or "",
         text_body=request.POST.get("text_body") or "",
         html_body=request.POST.get("html_body") or "",

@@ -35,6 +35,7 @@ Minimal policy:
         "ses:SendEmail",
         "ses:SendRawEmail",
         "ses:CreateEmailIdentity",
+        "ses:TagResource",
         "ses:GetEmailIdentity",
         "ses:DeleteEmailIdentity",
         "ses:GetConfigurationSet",
