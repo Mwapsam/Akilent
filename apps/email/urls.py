@@ -7,6 +7,7 @@ urlpatterns = [
     path("webhooks/ses/", ses_webhooks.ses_sns_webhook, name="ses-sns-webhook"),
     path("domains/", views.domains_list, name="email-domains"),
     path("domains/create/", views.domain_create, name="email-domain-create"),
+    path("domains/<int:pk>/", views.domain_detail, name="email-domain-detail"),
     path("domains/<int:pk>/verify/", views.domain_verify, name="email-domain-verify"),
     path("domains/<int:pk>/toggle/", views.domain_toggle, name="email-domain-toggle"),
     path("domains/<int:pk>/delete/", views.domain_delete, name="email-domain-delete"),

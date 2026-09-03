@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from celery import shared_task
 from django.core.cache import cache
@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 _OUTBOUND_BATCH = 50
 _MEDIA_BATCH = 20
 _MAX_EVENT_ATTEMPTS = 3
+_SENDING_STALE = timedelta(minutes=10)
+
+_PAYLOAD_TYPE_TO_LOG_TYPE = {
+    "text": MessageLog.MessageType.TEXT,
+    "template": MessageLog.MessageType.TEMPLATE,
+    "image": MessageLog.MessageType.IMAGE,
+    "audio": MessageLog.MessageType.AUDIO,
+    "video": MessageLog.MessageType.VIDEO,
+    "document": MessageLog.MessageType.DOCUMENT,
+    "sticker": MessageLog.MessageType.STICKER,
+}
 _AUTOMATION_EVENTS_CACHE_KEY = "whatsapp_automation_events_enabled"
 _AUTOMATION_EVENTS_CACHE_TTL = 60  # 60 second cache for SiteSettings flag
 
@@ -267,13 +278,66 @@ def _send_outbound(provider, contact, payload: dict) -> dict:
             raise WhatsAppProviderError(f"Send failed: {result.error}")
 
         return {"success": True, "message_id": result.message_id}
-    except WhatsAppProviderError as e:
+    except WhatsAppProviderError:
         raise
+
+
+def _log_type_for_payload(payload: dict) -> str:
+    return _PAYLOAD_TYPE_TO_LOG_TYPE.get(
+        payload.get("type", "text"), MessageLog.MessageType.UNKNOWN
+    )
+
+
+def _log_content_for_payload(payload: dict) -> str:
+    ptype = payload.get("type", "text")
+    if ptype == "text":
+        return payload.get("body", payload.get("text", "")) or ""
+    if ptype == "template":
+        return payload.get("template_name", "") or ""
+    return payload.get("caption", "") or ""
+
+
+def _ensure_outbound_log(msg: OutboundMessage) -> MessageLog:
+    """Create (once) the MessageLog mirror for an OutboundMessage.
+
+    Every outbound send is mirrored into MessageLog so that status webhooks
+    (delivered/read/failed), which arrive keyed only by the provider message id,
+    have a row to reconcile against.
+    """
+    if msg.message_log_id:
+        return msg.message_log
+
+    conversation = Conversation.get_or_open(msg.contact)
+    log = MessageLog.objects.create(
+        account=msg.account,
+        conversation=conversation,
+        contact=msg.contact,
+        direction=MessageLog.Direction.OUTBOUND,
+        message_type=_log_type_for_payload(msg.payload),
+        content=_log_content_for_payload(msg.payload),
+        status=MessageLog.Status.QUEUED,
+        timestamp=timezone.now(),
+        raw_payload=msg.payload,
+    )
+    msg.message_log = log
+    msg.save(update_fields=["message_log"])
+    return log
 
 
 @shared_task
 def drain_outbound_queue():
     now = timezone.now()
+
+    # Recover messages left mid-flight by a crashed/killed worker.
+    recovered = OutboundMessage.objects.filter(
+        status=OutboundMessage.Status.SENDING,
+        updated_at__lt=now - _SENDING_STALE,
+    ).update(status=OutboundMessage.Status.QUEUED)
+    if recovered:
+        logger.warning(
+            "drain_outbound_queue: recovered %s stale SENDING messages", recovered
+        )
+
     due = (
         OutboundMessage.objects.filter(
             status=OutboundMessage.Status.QUEUED,
@@ -283,9 +347,25 @@ def drain_outbound_queue():
         .select_related("account", "contact")[:_OUTBOUND_BATCH]
     )
 
-    sent = failed = 0
+    sent = failed = skipped = 0
     providers: dict = {}
     for msg in due:
+        # Idempotency: never re-send if a sibling with the same key already went out.
+        if msg.idempotency_key and (
+            OutboundMessage.objects.filter(
+                account_id=msg.account_id,
+                idempotency_key=msg.idempotency_key,
+                status=OutboundMessage.Status.SENT,
+            )
+            .exclude(pk=msg.pk)
+            .exists()
+        ):
+            msg.status = OutboundMessage.Status.CANCELLED
+            msg.last_error = "Duplicate idempotency_key; sibling already sent."
+            msg.save(update_fields=["status", "last_error"])
+            skipped += 1
+            continue
+
         try:
             provider = providers.get(msg.account_id)
             if provider is None:
@@ -296,17 +376,40 @@ def drain_outbound_queue():
                     "No active WhatsApp number with an access token for this account."
                 )
 
-            _send_outbound(provider, msg.contact, msg.payload)
+            log = _ensure_outbound_log(msg)
+
+            msg.status = OutboundMessage.Status.SENDING
+            msg.save(update_fields=["status"])
+
+            result = _send_outbound(provider, msg.contact, msg.payload)
+
+            message_id = result.get("message_id") or ""
+            log.message_id = message_id or None
+            log.status = MessageLog.Status.SENT
+            log.save(update_fields=["message_id", "status"])
+
             msg.status = OutboundMessage.Status.SENT
             msg.sent_at = timezone.now()
             msg.save(update_fields=["status", "sent_at"])
+
+            log.conversation.register_outbound(msg.sent_at)
             sent += 1
         except Exception as exc:
             msg.mark_failed(str(exc))
+            if (
+                msg.message_log_id
+                and msg.status == OutboundMessage.Status.FAILED
+            ):
+                MessageLog.objects.filter(pk=msg.message_log_id).update(
+                    status=MessageLog.Status.FAILED
+                )
             failed += 1
 
-    if sent or failed:
-        logger.info("drain_outbound_queue: sent=%s failed=%s", sent, failed)
+    if sent or failed or skipped:
+        logger.info(
+            "drain_outbound_queue: sent=%s failed=%s skipped=%s",
+            sent, failed, skipped,
+        )
 
 
 @shared_task

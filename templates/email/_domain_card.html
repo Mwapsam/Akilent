@@ -30,9 +30,8 @@ re-submits the data-dns-check form until the domain verifies itself.{% endcommen
         <button class="btn btn-ghost btn-sm" type="submit">{% if d.is_active %}Disable{% else %}Enable{% endif %}</button>
       </form>
       <form data-ajax method="post" action="/email/domains/{{ d.pk }}/delete/"
-            data-remove="#domain-card-{{ d.pk }}"
-            data-confirm="Delete {{ d.domain }} and all its mailboxes & aliases?" data-confirm-danger
-            data-confirm-label="Delete">
+            data-confirm="Delete {{ d.domain }}? It will stop sending and its DNS records are removed."
+            data-confirm-danger data-confirm-label="Delete">
         {% csrf_token %}
         <button class="btn btn-danger-ghost btn-sm" type="submit" aria-label="Delete {{ d.domain }}">
           {% include "components/icon.html" with name="trash" class="w-4 h-4" %}

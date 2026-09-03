@@ -43,6 +43,7 @@ class OutboundMessage(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
     sent_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
@@ -58,10 +59,17 @@ class OutboundMessage(models.Model):
             ),
         ]
 
-    def mark_failed(self, error: str):
+    def mark_failed(self, error: str, *, terminal: bool = False):
+        """Record a send failure.
+
+        ``terminal=True`` (policy violations, non-retryable provider errors)
+        jumps straight to FAILED without consuming a retry attempt or scheduling
+        a backoff. Otherwise the message is re-queued with exponential backoff
+        until ``MAX_ATTEMPTS`` is reached.
+        """
         self.attempts += 1
         self.last_error = error[:5000]
-        if self.attempts >= self.MAX_ATTEMPTS:
+        if terminal or self.attempts >= self.MAX_ATTEMPTS:
             self.status = self.Status.FAILED
             self.next_attempt_at = None
         else:

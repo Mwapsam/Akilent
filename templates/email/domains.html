@@ -74,9 +74,7 @@
     Add a sending domain
     {% include "components/help_tip.html" with text="Use a subdomain like mail.yourcompany.com so your main inbox (e.g. Google Workspace) is unaffected." %}
   </h2>
-  <form data-ajax method="post" action="/email/domains/create/"
-        data-append="#domains-list" data-remove="#domains-empty" data-reset
-        class="flex flex-wrap gap-3">
+  <form method="post" action="/email/domains/create/" class="flex flex-wrap gap-3">
     {% csrf_token %}
     {% if is_admin %}
       <label class="sr-only" for="id_account_id">Account</label>
@@ -93,14 +91,33 @@
   </form>
 </div>
 
-{# Domains #}
-<div id="domains-list" class="grid gap-4">
-  {% for d in domains %}
-    {% include "email/_domain_card.html" %}
-  {% endfor %}
+{# Domains — list only; click through to a domain for DNS records & management #}
+{% if domains %}
+<div class="card overflow-hidden">
+  <ul class="divide-y divide-gray-100">
+    {% for d in domains %}
+    <li>
+      <a href="{% url 'email-domain-detail' d.pk %}"
+         class="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-gray-900 truncate">{{ d.domain }}</span>
+            {% if d.status == 'verified' %}<span class="badge badge-success">Verified</span>
+            {% elif d.status == 'failed' %}<span class="badge badge-danger">Failed</span>
+            {% else %}<span class="badge badge-warning">Pending DNS</span>{% endif %}
+            {% if not d.is_active %}<span class="badge badge-neutral">Disabled</span>{% endif %}
+          </div>
+          {% if is_admin %}<p class="text-xs text-gray-400 mt-0.5">{{ d.account.company_name }}</p>{% endif %}
+        </div>
+        <span class="text-xs text-gray-400 shrink-0">{{ d.dns_found_count }}/{{ d.dns_total_count }} DNS records</span>
+        {% include "components/icon.html" with name="chevron-right" class="w-4 h-4 text-gray-300 shrink-0" %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
 </div>
-{% if not domains %}
-  <div id="domains-empty" class="card">
+{% else %}
+  <div class="card">
     {% include "components/empty_state.html" with icon="globe" title="No sending domains yet" message="Add a domain above to provision DKIM and start sending." %}
   </div>
 {% endif %}
