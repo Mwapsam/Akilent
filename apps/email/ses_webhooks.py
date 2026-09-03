@@ -8,6 +8,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+
 import logging
 import re
 from typing import Any
@@ -33,7 +35,6 @@ def _get_allowed_sns_topic_arns() -> set[str]:
     MailProviderSettings takes precedence; env var is the fallback.
     Returns a set of ARNs, or empty set if not configured.
     """
-    import os
     from django.db import DEFAULT_DB_ALIAS, connections
 
     # Try DB first (MailProviderSettings.ses_sns_topic_arn)
