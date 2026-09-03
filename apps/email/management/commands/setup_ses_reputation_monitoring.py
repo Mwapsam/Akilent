@@ -136,11 +136,12 @@ class Command(BaseCommand):
             + """:ACCOUNT_ID:ses-bounces-complaints
    - This enables webhook validation in apps/email/ses_webhooks.py
 
-4. Create SNS subscription to receive notifications:
-   - Email: aws sns subscribe --topic-arn <TOPIC_ARN> \\
-            --protocol email --notification-endpoint <YOUR_EMAIL>
-   - Lambda/SQS: Wire to apps/email/ses_webhooks.py endpoint
-     POST /webhooks/ses/bounce-complaint/
+4. Create an HTTPS SNS subscription pointing at this app's SES webhook:
+     aws sns subscribe --topic-arn <TOPIC_ARN> \\
+       --protocol https \\
+       --notification-endpoint https://<YOUR_HOST>/email/webhooks/ses/
+   The endpoint (apps/email/ses_webhooks.py) auto-confirms the subscription and
+   then ingests Bounce / Complaint / Delivery notifications.
 
 5. Verify reputation metrics in CloudWatch:
    - Metric name: "Send", "Bounce", "Complaint", "Delivery" (after first sends)

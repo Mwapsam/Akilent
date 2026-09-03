@@ -239,8 +239,19 @@ STALWART_API_BASE = os.getenv("STALWART_API_BASE", "")
 STALWART_API_KEY = os.getenv("STALWART_API_KEY", "")
 
 # Provider selector — swap the implementation without touching business logic.
+# These are the boot-time defaults; the MailProviderSettings singleton (edited by
+# superadmins) overrides them at runtime.
 MAIL_PROVIDER_BACKEND = os.getenv("MAIL_PROVIDER_BACKEND", "stalwart")
 EMAIL_SEND_PROVIDER_BACKEND = os.getenv("EMAIL_SEND_PROVIDER_BACKEND", "smtp")
+
+# AWS SES — credentials come from the standard AWS_* env vars / IAM role; these
+# name the region and (optional) tracking resources. Also settable live via
+# MailProviderSettings.
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_S3_REGION_NAME", "us-east-1"))
+SES_CONFIGURATION_SET = os.getenv("SES_CONFIGURATION_SET", "")
+SES_SNS_TOPIC_ARN = os.getenv("SES_SNS_TOPIC_ARN", "")
+
+_USING_SES = "ses" in (MAIL_PROVIDER_BACKEND, EMAIL_SEND_PROVIDER_BACKEND)
 
 # Public domain used to build absolute tracking URLs in outgoing emails.
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", (ALLOWED_HOSTS[0] if ALLOWED_HOSTS else "localhost"))
@@ -256,16 +267,34 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "True").lower() == "true"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 
 if not DEBUG:
-    if not STALWART_API_BASE:
-        raise ValueError("STALWART_API_BASE is required")
-    if not STALWART_API_KEY:
-        raise ValueError("STALWART_API_KEY is required")
-    if not EMAIL_HOST:
-        raise ValueError("EMAIL_HOST is required")
-    if not EMAIL_HOST_USER:
-        raise ValueError("EMAIL_HOST_USER is required")
-    if not EMAIL_HOST_PASSWORD:
-        raise ValueError("EMAIL_HOST_PASSWORD is required")
+    if _USING_SES:
+        # SES path: require AWS credentials + region. The Stalwart/SMTP vars are
+        # not needed (system mail also goes through the SES send provider).
+        if not AWS_ACCESS_KEY_ID:
+            raise ValueError("AWS_ACCESS_KEY_ID is required when using the SES backend")
+        if not AWS_SECRET_ACCESS_KEY:
+            raise ValueError("AWS_SECRET_ACCESS_KEY is required when using the SES backend")
+        if not AWS_REGION:
+            raise ValueError("AWS_REGION is required when using the SES backend")
+        if not SES_SNS_TOPIC_ARN:
+            import warnings
+
+            warnings.warn(
+                "SES_SNS_TOPIC_ARN is not set — bounce/complaint notifications "
+                "will not be ingested until it is configured.",
+                RuntimeWarning,
+            )
+    else:
+        if not STALWART_API_BASE:
+            raise ValueError("STALWART_API_BASE is required")
+        if not STALWART_API_KEY:
+            raise ValueError("STALWART_API_KEY is required")
+        if not EMAIL_HOST:
+            raise ValueError("EMAIL_HOST is required")
+        if not EMAIL_HOST_USER:
+            raise ValueError("EMAIL_HOST_USER is required")
+        if not EMAIL_HOST_PASSWORD:
+            raise ValueError("EMAIL_HOST_PASSWORD is required")
 
 # The external Stalwart submission endpoint, shown to customers setting up
 # per-tenant SMTP relay (apps.api / apps.email SmtpCredential docs).
@@ -330,6 +359,7 @@ CELERY_TASK_ROUTES = {
     "apps.email.tasks.prune_email_logs": {"queue": "celery"},
     "apps.email.tasks.prune_tracking_tokens": {"queue": "celery"},
     "apps.email.tasks.prune_provisioning_jobs": {"queue": "celery"},
+    "apps.email.tasks.reverify_pending_domains": {"queue": "celery"},
 }
 
 CELERY_BEAT_SCHEDULE = {
@@ -348,6 +378,10 @@ CELERY_BEAT_SCHEDULE = {
     "prune-provisioning-jobs": {
         "task": "apps.email.tasks.prune_provisioning_jobs",
         "schedule": 86400.0,
+    },
+    "reverify-pending-domains": {
+        "task": "apps.email.tasks.reverify_pending_domains",
+        "schedule": 900.0,  # every 15 min — pick up customer DNS changes
     },
 }
 

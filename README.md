@@ -48,9 +48,11 @@ Akilent is a digital communications and automation platform that enables busines
 
 ## Implementation
 
-This repository (`automator`) is a multi-tenant email-automation SaaS platform (Django 6, Postgres, Celery/Redis, Flutterwave billing, iRedMail provisioning, Tailwind + Alpine UI) that implements the Akilent core services. The product is feature-complete as an MVP: self-service signup → onboarding → domain/mailbox provisioning → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
+This repository (`automator`) is a multi-tenant email-automation SaaS platform (Django 6, Postgres, Celery/Redis, Flutterwave billing, Tailwind + Alpine UI) that implements the Akilent core services. The product is feature-complete as an MVP: self-service signup → onboarding → sending-domain provisioning (DNS-verified) → per-plan quota enforcement → Flutterwave subscription billing → usage tracking + delivery logs/analytics. WhatsApp verticals exist but are soft-disabled behind feature flags and carry unfinished TODOs.
 
-**Current Focus**: Close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp stay flagged off). Infra is already hosted (server, iRedMail, DNS, TLS exist), so deliverables focus on application + payment + trust gaps, ordered strictly by hard launch blockers first.
+**Mail backend**: pluggable via the `MailProviderSettings` singleton (superadmin-editable) or the `MAIL_PROVIDER_BACKEND` / `EMAIL_SEND_PROVIDER_BACKEND` env vars. Supported: **AWS SES** (domain identities with Easy DKIM = 3 CNAMEs, SESv2 send, SNS bounce/complaint ingestion at `/email/webhooks/ses/`) and **Stalwart** (HTTP management API + SMTP relay). See `.env.example` for the vars each needs. Domains are verified by a self-hosted DNS check (`apps/email/dnscheck.py`) plus, for SES, the provider's own `VerificationStatus`; the `reverify_pending_domains` Celery beat task re-checks pending domains every 15 min.
+
+**Current Focus**: Close the gaps that block onboarding the first paying clients as an Email-SaaS-only v1 (WhatsApp stay flagged off).
 
 
 # PRODUCTION
@@ -59,10 +61,6 @@ This repository (`automator`) is a multi-tenant email-automation SaaS platform (
 
 **FIELD_ENCRYPTION_KEY** ***set or the app will raise an error on startup. Generate one with:***    
     `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
-
-
-
-curl -i -X POST https://api.progstack.org/api/login -H 'Content-Type: application/json' -d '{"username":"postmaster@progstack.org","password":"@Hello2061#"}'
 
 ## Frontend / static assets
 

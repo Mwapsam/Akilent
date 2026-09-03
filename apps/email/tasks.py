@@ -501,6 +501,35 @@ def prune_tracking_tokens() -> int:
 
 
 @shared_task(queue="celery")
+def reverify_pending_domains() -> int:
+    """Re-run the live DNS check for every domain still awaiting verification.
+
+    The customer publishes DNS on their own schedule, so we keep checking until
+    ownership (and, for SES, the provider's own status) is satisfied — at which
+    point ``refresh_domain`` transitions the domain to VERIFIED. Idempotent:
+    re-checking an already-live record is a no-op.
+    """
+    from apps.email.models import EmailDomain
+    from apps.email.verification import refresh_domain
+
+    pending = EmailDomain.objects.filter(status=EmailDomain.Status.PENDING)
+    verified = 0
+    for domain in pending:
+        try:
+            refresh_domain(domain)
+            if domain.is_verified:
+                verified += 1
+        except Exception:
+            logger.exception("reverify_pending_domains: failed for %s", domain.domain)
+    logger.info(
+        "reverify_pending_domains: checked %d pending domain(s), %d newly verified",
+        pending.count(),
+        verified,
+    )
+    return verified
+
+
+@shared_task(queue="celery")
 def prune_provisioning_jobs() -> int:
     """Delete completed ProvisioningJob rows older than 30 days."""
     from datetime import timedelta

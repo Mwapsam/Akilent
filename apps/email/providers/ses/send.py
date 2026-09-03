@@ -32,6 +32,9 @@ class SesSendProvider(EmailSendProvider):
         # Read region and configuration set from MailProviderSettings; fall back to env/defaults
         region = "us-east-1"
         self.configuration_set: str | None = None
+        # Set when a configured configuration set is missing and tracking had to
+        # be disabled — operators/tests can inspect this without parsing logs.
+        self.tracking_degraded = False
 
         try:
             settings = MailProviderSettings.load()
@@ -54,14 +57,18 @@ class SesSendProvider(EmailSendProvider):
             code = exc.response.get("Error", {}).get("Code", "")
             if code == "NotFoundException":
                 logger.error(
-                    "SES configuration set %r is configured but does not exist. "
-                    "Create it (and event destinations) in infra; not creating from app.",
+                    "SES configuration set %r does not exist — DEGRADED: bounce/"
+                    "complaint/delivery tracking is OFF for this process. Create it "
+                    "and its SNS event destinations (see `manage.py "
+                    "setup_ses_reputation_monitoring`), then clear/reset "
+                    "MailProviderSettings.ses_configuration_set.",
                     self.configuration_set,
                 )
-                # Option A: disable tracking for this process
+                # Degrade rather than fail: outbound mail still goes out, just
+                # without a config set attached. The error log above is the
+                # operator signal; we deliberately do not crash the worker.
+                self.tracking_degraded = True
                 self.configuration_set = None
-                # Option B: raise and fail startup if tracking is mandatory
-                # raise EmailProviderError(...)
             else:
                 logger.exception(
                     "Error checking SES configuration set %r", self.configuration_set

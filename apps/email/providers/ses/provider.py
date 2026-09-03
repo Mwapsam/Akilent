@@ -18,6 +18,8 @@ from botocore.exceptions import ClientError
 from apps.email.exceptions import EmailProviderError
 from apps.email.types import (
     DkimRecord,
+    DomainInfo,
+    DomainStatus,
     OperationResult,
 )
 
@@ -48,8 +50,22 @@ class SesProvider(EmailProvider):
 
     # ── Domain management ──────────────────────────────────────────────────────
 
-    def create_domain(self, domain: str) -> OperationResult:
-        """Register a domain as a sending identity in SES (Easy DKIM enabled)."""
+    def create_domain(
+        self,
+        domain: str,
+        *,
+        max_accounts: int | None = None,
+        disk_quota_mb: int | None = None,
+        description: str = "",
+    ) -> DomainInfo:
+        """Register a domain as a sending identity in SES (Easy DKIM enabled).
+
+        ``max_accounts`` / ``disk_quota_mb`` / ``description`` are accepted for
+        interface compatibility with mail-server providers and ignored — SES has
+        no such concepts. The returned :class:`DomainInfo` has ``dkim=None``;
+        SES DKIM tokens are not available synchronously at create time, callers
+        fetch them via :meth:`get_dkim_records` once the identity exists.
+        """
         try:
             # EmailIdentity must be the bare domain, not an address like
             # "noreply@domain". Address identities use email confirmation,
@@ -59,18 +75,24 @@ class SesProvider(EmailProvider):
                 Tags=[{"Key": "Source", "Value": "Automator"}],
             )
             logger.info("SES domain identity created: %s", domain)
-            return OperationResult(success=True)
         except ClientError as exc:
             if exc.response["Error"]["Code"] == "AlreadyExistsException":
                 logger.info("SES domain identity already exists: %s", domain)
-                return OperationResult(success=True)
-            logger.exception("Failed to create SES domain identity: %s", domain)
-            raise EmailProviderError(
-                f"Failed to create domain identity: {exc}"
-            ) from exc
+            else:
+                logger.exception("Failed to create SES domain identity: %s", domain)
+                raise EmailProviderError(
+                    f"Failed to create domain identity: {exc}"
+                ) from exc
         except Exception as exc:
             logger.exception("Unexpected error creating SES domain identity: %s", domain)
             raise EmailProviderError(str(exc)) from exc
+
+        return DomainInfo(
+            domain=domain,
+            status=DomainStatus.PENDING,
+            dkim=None,
+            description=description,
+        )
 
     def verify_domain(self, domain: str) -> OperationResult:
         """Return success when SES reports VerificationStatus == SUCCESS."""

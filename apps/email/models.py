@@ -6,6 +6,23 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+# Shared presentation for the DNS records a tenant must publish. Used by both
+# the legacy column-derived path and the EmailDnsRecord-backed (SES) path so the
+# domain card and the DNS checker always agree on labels/ordering.
+_DNS_LABELS = {
+    "verify": "Domain verification",
+    "dkim": "DKIM",
+    "spf": "SPF",
+    "dmarc": "DMARC",
+}
+_DNS_DESCS = {
+    "verify": "Proves you own this domain so we can switch it on.",
+    "dkim": "Signs your mail so providers trust it wasn't tampered with.",
+    "spf": "Lists the servers allowed to send for your domain.",
+    "dmarc": "Tells receivers what to do with mail that fails the checks.",
+}
+_DNS_KEY_ORDER = {"verify": 0, "dkim": 1, "spf": 2, "dmarc": 3}
+
 
 class ProvisioningJob(models.Model):
     """Tracks the lifecycle of an async Celery provisioning operation.
@@ -171,6 +188,20 @@ class EmailDomain(models.Model):
     def is_verified(self) -> bool:
         return self.status == self.Status.VERIFIED
 
+    def is_ses_backed(self) -> bool:
+        """True when the active mail backend is AWS SES (infra or send).
+
+        SES publishes DKIM as three CNAME records, so its DNS spec comes from
+        EmailDnsRecord rows rather than the single-TXT columns below.
+        """
+        from apps.core.models import MailProviderSettings
+
+        try:
+            s = MailProviderSettings.load()
+            return "ses" in (s.infra_backend, s.send_backend)
+        except Exception:
+            return False
+
     def ensure_verification_token(self) -> bool:
         """Generate a self-hosted ownership TXT record if one isn't set yet.
 
@@ -212,7 +243,27 @@ class EmailDomain(models.Model):
 
         Single source of truth for both the UI (the domain card iterates this)
         and the DNS checker, so the names/values they compare always agree.
+
+        When EmailDnsRecord rows exist (SES Easy DKIM = 3 CNAMEs), the spec is
+        built from them; otherwise it is derived from this row's columns
+        (Stalwart-style single-TXT DKIM).
         """
+        rows = list(self.dns_record_rows.all()) if self.pk else []
+        if rows:
+            rows.sort(key=lambda r: (_DNS_KEY_ORDER.get(r.key, 9), r.name))
+            return [
+                {
+                    "key": r.key,
+                    "label": _DNS_LABELS.get(r.key, r.key.upper()),
+                    "type": r.record_type,
+                    "name": r.name,
+                    "value": r.value,
+                    "desc": _DNS_DESCS.get(r.key, ""),
+                    "required": r.key in ("verify", "dkim"),
+                    "ok": r.is_ok,
+                }
+                for r in rows
+            ]
         return [
             {
                 "key": "verify", "label": "Domain verification", "type": "TXT",
@@ -274,6 +325,52 @@ class EmailDomain(models.Model):
 
     def __str__(self):
         return f"{self.domain} ({self.status})"
+
+
+class EmailDnsRecord(models.Model):
+    """One DNS record a tenant must publish for a sending domain.
+
+    Used when the mail backend needs a record shape the legacy single-TXT-DKIM
+    columns on EmailDomain can't express — notably AWS SES Easy DKIM, which is
+    three CNAME records. For Stalwart-style domains this table stays empty and
+    EmailDomain.dns_records() derives the list from its own columns instead.
+    """
+
+    class Key(models.TextChoices):
+        VERIFY = "verify", "Domain verification"
+        DKIM = "dkim", "DKIM"
+        SPF = "spf", "SPF"
+        DMARC = "dmarc", "DMARC"
+
+    class RecordType(models.TextChoices):
+        TXT = "TXT", "TXT"
+        CNAME = "CNAME", "CNAME"
+
+    domain = models.ForeignKey(
+        EmailDomain, on_delete=models.CASCADE, related_name="dns_record_rows"
+    )
+    key = models.CharField(max_length=10, choices=Key.choices)
+    record_type = models.CharField(
+        max_length=10, choices=RecordType.choices, default=RecordType.TXT
+    )
+    name = models.CharField(max_length=255)
+    value = models.TextField()
+    is_ok = models.BooleanField(default=False)
+    checked_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["domain_id", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["domain", "key", "name"],
+                name="uniq_dns_record_per_domain_key_name",
+            )
+        ]
+
+    def __str__(self):
+        state = "ok" if self.is_ok else "pending"
+        return f"{self.record_type} {self.name} [{state}]"
 
 
 class EmailApiKey(models.Model):

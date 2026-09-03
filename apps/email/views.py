@@ -14,6 +14,7 @@ from django.views.decorators.http import require_POST
 from apps.accounts.models import Account
 from apps.accounts.utils import get_current_account
 from apps.email import dnscheck
+from apps.email.verification import refresh_domain
 from apps.email.models import (
     EmailApiKey,
     EmailDomain,
@@ -185,22 +186,9 @@ def domain_verify(request, pk):
     record = get_object_or_404(_scoped(EmailDomain.objects, request, account), pk=pk)
     ajax = is_ajax(request)
 
-    if record.ensure_verification_token():
-        record.save(update_fields=["verify_record_name", "verify_record_value"])
-
-    results = dnscheck.check_domain(record)
-    record.dkim_ok = results["dkim"]
-    record.spf_ok = results["spf"]
-    record.dmarc_ok = results["dmarc"]
-    record.last_checked_at = timezone.now()
-    fields = ["dkim_ok", "spf_ok", "dmarc_ok", "last_checked_at"]
-
-    newly_verified = results["verify"] and not record.is_verified
-    if results["verify"] and record.status != EmailDomain.Status.VERIFIED:
-        record.status = EmailDomain.Status.VERIFIED
-        record.verified_at = timezone.now()
-        fields += ["status", "verified_at"]
-    record.save(update_fields=fields)
+    was_verified = record.is_verified
+    results = refresh_domain(record)
+    newly_verified = record.is_verified and not was_verified
 
     if record.is_verified:
         missing = [r["label"] for r in record.dns_records() if r["required"] and not r["ok"]]

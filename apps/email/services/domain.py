@@ -70,7 +70,12 @@ class DomainService:
         if dkim:
             domain_record.dkim_public_key = dkim.public_key_txt
             domain_record.dkim_selector = dkim.selector
-        domain_record.save(update_fields=["dkim_public_key", "dkim_selector"])
+            domain_record.save(update_fields=["dkim_public_key", "dkim_selector"])
+        elif hasattr(self._provider, "get_dkim_records"):
+            # Multi-record DKIM (AWS SES Easy DKIM = 3 CNAMEs): the tokens aren't
+            # available at create time, so fetch them now and materialise the
+            # full DNS spec as EmailDnsRecord rows for the customer to publish.
+            self._sync_dns_records(domain_record)
 
         audit(
             account=self.account,
@@ -166,6 +171,60 @@ class DomainService:
         return record
 
     # ── Private helpers ───────────────────────────────────────────────────
+
+    def _sync_dns_records(self, domain_record: EmailDomain) -> None:
+        """Materialise the full DNS spec (verify TXT, 3 DKIM CNAMEs, SPF, DMARC)
+        as EmailDnsRecord rows for a multi-record-DKIM provider (SES)."""
+        from apps.email.models import EmailDnsRecord
+
+        dkim_records = self._provider.get_dkim_records(domain_record.domain)
+
+        if domain_record.ensure_verification_token():
+            domain_record.save(
+                update_fields=["verify_record_name", "verify_record_value"]
+            )
+
+        wanted: list[tuple[str, str, str, str]] = [
+            (
+                EmailDnsRecord.Key.VERIFY,
+                EmailDnsRecord.RecordType.TXT,
+                domain_record.verify_record_name or domain_record.domain,
+                domain_record.verify_record_value,
+            ),
+        ]
+        for rec in dkim_records:
+            wanted.append(
+                (
+                    EmailDnsRecord.Key.DKIM,
+                    EmailDnsRecord.RecordType.CNAME,
+                    rec.record_name,
+                    rec.public_key_txt,
+                )
+            )
+        wanted.append(
+            (
+                EmailDnsRecord.Key.SPF,
+                EmailDnsRecord.RecordType.TXT,
+                domain_record.domain,
+                domain_record.spf_value,
+            )
+        )
+        wanted.append(
+            (
+                EmailDnsRecord.Key.DMARC,
+                EmailDnsRecord.RecordType.TXT,
+                domain_record.dmarc_record_name,
+                domain_record.dmarc_value,
+            )
+        )
+
+        for key, rtype, name, value in wanted:
+            EmailDnsRecord.objects.update_or_create(
+                domain=domain_record,
+                key=key,
+                name=name,
+                defaults={"record_type": rtype, "value": value},
+            )
 
     def _toggle(
         self, domain_record: EmailDomain, *, active: bool

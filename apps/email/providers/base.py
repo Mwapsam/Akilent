@@ -76,10 +76,20 @@ class EmailProvider(ABC):
         """
 
     @abstractmethod
+    def delete_domain(self, domain: str) -> OperationResult:
+        """Permanently remove a domain and all its accounts/aliases/DKIM keys."""
+
+    # ── Optional mail-server operations ───────────────────────────────────
+    # Not every backend is a full mail server. API-style providers (e.g. AWS
+    # SES) manage a sending identity + DKIM only and have no concept of
+    # per-domain account limits, disk quotas, or operator-chosen DKIM
+    # selectors. Those providers leave the methods below at the default, which
+    # raises so a mis-wired call site fails loudly instead of silently no-op'ing.
+
     def get_domain(self, domain: str) -> DomainInfo:
         """Fetch current metadata for an existing domain."""
+        raise EmailProviderError("get_domain is not supported by this provider")
 
-    @abstractmethod
     def update_domain(
         self,
         domain: str,
@@ -89,22 +99,20 @@ class EmailProvider(ABC):
         description: str | None = None,
     ) -> DomainInfo:
         """Update mutable domain settings."""
+        raise EmailProviderError("update_domain is not supported by this provider")
 
-    @abstractmethod
-    def delete_domain(self, domain: str) -> OperationResult:
-        """Permanently remove a domain and all its accounts/aliases/DKIM keys."""
-
-    @abstractmethod
     def list_domains(self) -> list[DomainInfo]:
         """Return all domains configured on the mail server."""
+        raise EmailProviderError("list_domains is not supported by this provider")
 
-    @abstractmethod
     def set_domain_active(self, domain: str, *, active: bool) -> OperationResult:
         """Enable or disable a domain without deleting it."""
+        raise EmailProviderError(
+            "set_domain_active is not supported by this provider"
+        )
 
     # ── DKIM management ───────────────────────────────────────────────────
 
-    @abstractmethod
     def provision_dkim(
         self,
         domain: str,
@@ -117,12 +125,12 @@ class EmailProvider(ABC):
         The private key stays on the server. Returns the public-key TXT record
         for storage in Django and display to the tenant.
         """
+        raise EmailProviderError("provision_dkim is not supported by this provider")
 
     @abstractmethod
     def get_dkim(self, domain: str, *, selector: str = "dkim") -> DkimRecord:
         """Retrieve the current DKIM public-key TXT record."""
 
-    @abstractmethod
     def rotate_dkim(
         self,
         domain: str,
@@ -135,6 +143,7 @@ class EmailProvider(ABC):
         The old selector remains valid during DNS propagation. Callers should
         schedule old-key deletion after confirming the new record is live in DNS.
         """
+        raise EmailProviderError("rotate_dkim is not supported by this provider")
 
     # ── Legacy compatibility helpers ──────────────────────────────────────
     # Concrete implementations of the old 8-method interface so existing

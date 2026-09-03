@@ -7,45 +7,10 @@ except ImportError:
 
 import boto3
 from django.test import TestCase
+from apps.email.exceptions import EmailProviderError
 from apps.email.providers.ses.provider import SesProvider
-from apps.email.types import DomainInfo, DkimRecord, OperationResult
+from apps.email.types import DomainInfo, DomainStatus
 from unittest.mock import patch
-
-
-class _ConcreteSesProvider(SesProvider):
-    """Concrete implementation for testing (SesProvider is now abstract)."""
-
-    def get_domain(self, domain: str) -> DomainInfo:
-        """Not implemented for SES provider (SES doesn't support domain metadata queries)."""
-        raise NotImplementedError("SES provider doesn't support get_domain")
-
-    def list_domains(self) -> list[DomainInfo]:
-        """Not implemented for SES provider."""
-        raise NotImplementedError("SES provider doesn't support list_domains")
-
-    def update_domain(self, domain: str, **kwargs) -> DomainInfo:
-        """Not implemented for SES provider."""
-        raise NotImplementedError("SES provider doesn't support update_domain")
-
-    def delete_domain(self, domain: str) -> OperationResult:
-        """Delete a domain from SES (not tested in test_ses_provider.py)."""
-        try:
-            self.client.delete_email_identity(EmailIdentity=domain)
-            return OperationResult(success=True)
-        except Exception:
-            return OperationResult(success=False)
-
-    def set_domain_active(self, domain: str, *, active: bool) -> OperationResult:
-        """Not implemented for SES provider."""
-        raise NotImplementedError("SES provider doesn't support set_domain_active")
-
-    def provision_dkim(self, domain: str, **kwargs) -> DkimRecord:
-        """SES Easy DKIM is auto-provisioned; return existing DKIM record."""
-        return self.get_dkim(domain, **kwargs)
-
-    def rotate_dkim(self, domain: str, **kwargs) -> DkimRecord:
-        """Not implemented for SES provider."""
-        raise NotImplementedError("SES provider doesn't support rotate_dkim")
 
 
 class SesProviderTests(TestCase):
@@ -60,12 +25,16 @@ class SesProviderTests(TestCase):
         self.addCleanup(self.mock_aws.stop)
 
         self.ses_client = boto3.client("sesv2", region_name="us-east-1")
-        self.provider = _ConcreteSesProvider()
+        self.provider = SesProvider()
 
     def test_create_domain(self):
         domain = "example.com"
-        result = self.provider.create_domain(domain)
-        self.assertTrue(result.success)
+        info = self.provider.create_domain(domain, description="account 7")
+        self.assertIsInstance(info, DomainInfo)
+        self.assertEqual(info.domain, domain)
+        self.assertEqual(info.status, DomainStatus.PENDING)
+        self.assertIsNone(info.dkim)
+        self.assertEqual(info.description, "account 7")
 
         # Verify identity exists in SES as a domain identity (EmailIdentity
         # is the correct sesv2 param name; the identity itself should be
@@ -77,9 +46,23 @@ class SesProviderTests(TestCase):
     def test_create_domain_already_exists(self):
         domain = "example.com"
         self.provider.create_domain(domain)
-        # Second call should still be successful
-        result = self.provider.create_domain(domain)
-        self.assertTrue(result.success)
+        # Second call should still return a PENDING DomainInfo, not raise.
+        info = self.provider.create_domain(domain)
+        self.assertEqual(info.status, DomainStatus.PENDING)
+
+    def test_unsupported_operations_raise(self):
+        # SES is a sending-identity provider, not a mail server: the
+        # mail-server-only methods inherit the base default that raises.
+        for call in (
+            lambda: self.provider.get_domain("example.com"),
+            lambda: self.provider.list_domains(),
+            lambda: self.provider.update_domain("example.com"),
+            lambda: self.provider.set_domain_active("example.com", active=True),
+            lambda: self.provider.provision_dkim("example.com"),
+            lambda: self.provider.rotate_dkim("example.com", new_selector="s2"),
+        ):
+            with self.assertRaises(EmailProviderError):
+                call()
 
     def test_verify_domain_success(self):
         domain = "example.com"
@@ -140,9 +123,47 @@ class SesProviderTests(TestCase):
                     "token789.dkim.amazonses.com",
                 ],
             )
+            self.assertEqual(
+                [r.record_name for r in records],
+                [
+                    "token123._domainkey.example.com",
+                    "token456._domainkey.example.com",
+                    "token789._domainkey.example.com",
+                ],
+            )
 
     def test_delete_domain(self):
         domain = "example.com"
         self.provider.create_domain(domain)
         result = self.provider.delete_domain(domain)
         self.assertTrue(result.success)
+
+
+class SesFactoryResolutionTests(TestCase):
+    """The "ses" aliases in the provider factory must resolve to instances."""
+
+    def setUp(self):
+        self.mock_aws = mock_aws()
+        self.mock_aws.start()
+        self.addCleanup(self.mock_aws.stop)
+
+    def test_get_mail_provider_resolves_ses(self):
+        from apps.email.providers import get_mail_provider
+        from apps.email.providers.ses import SesProvider as _SesProvider
+
+        with patch("apps.core.models.MailProviderSettings.load") as load:
+            load.return_value.infra_backend = "ses"
+            load.return_value.aws_region = "us-east-1"
+            provider = get_mail_provider()
+        self.assertIsInstance(provider, _SesProvider)
+
+    def test_get_send_provider_resolves_ses(self):
+        from apps.email.providers import get_send_provider
+        from apps.email.providers.ses import SesSendProvider as _SesSendProvider
+
+        with patch("apps.core.models.MailProviderSettings.load") as load:
+            load.return_value.send_backend = "ses"
+            load.return_value.aws_region = "us-east-1"
+            load.return_value.ses_configuration_set = ""
+            provider = get_send_provider()
+        self.assertIsInstance(provider, _SesSendProvider)
