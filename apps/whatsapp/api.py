@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import Optional
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -60,17 +61,23 @@ def send_message(
     contact: WhatsAppContact,
     text: str,
     message_type: str = "text",
+    *,
+    idempotency_key: Optional[str] = None,
 ) -> OutboundMessage:
-    """Send a WhatsApp message to a contact.
+    """Send a free-text WhatsApp message to a contact.
 
-    This is the public interface for outbound messaging. It creates an OutboundMessage
-    and enqueues it for delivery.
+    This is the public interface for outbound messaging. It creates a QUEUED
+    OutboundMessage carrying a provider-agnostic ``payload`` dict (the shape
+    consumed by ``apps.whatsapp.tasks._send_outbound``) and enqueues a drain run.
 
     Args:
         account: The account sending the message
         contact: The recipient contact
         text: Message text/body
         message_type: Message type (default: 'text')
+        idempotency_key: Optional caller-supplied dedupe key. When omitted a
+            random key is generated so the ``unique_outbound_idempotency``
+            constraint always has a value to enforce.
 
     Returns:
         The created OutboundMessage instance
@@ -81,8 +88,8 @@ def send_message(
     msg = OutboundMessage.objects.create(
         account=account,
         contact=contact,
-        body=text,
-        message_type=message_type,
+        payload={"type": message_type, "body": text},
+        idempotency_key=idempotency_key or uuid.uuid4().hex,
     )
     # Enqueue for delivery
     from apps.whatsapp.tasks import drain_outbound_queue
@@ -120,5 +127,5 @@ def count_conversations(account: Account) -> int:
     """
     from apps.whatsapp.models import Conversation
     return Conversation.objects.filter(
-        contact__account=account, is_closed=False
+        contact__account=account, is_open=True
     ).count()

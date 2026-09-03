@@ -12,6 +12,7 @@ responsibility, not the caller's.
 import logging
 
 import requests
+from django.conf import settings
 
 from apps.whatsapp.providers.base import WhatsAppProvider, WhatsAppProviderError
 from apps.whatsapp.types import (
@@ -22,7 +23,13 @@ from apps.whatsapp.types import (
 
 logger = logging.getLogger(__name__)
 
-GRAPH_API_BASE = "https://graph.facebook.com/v25.0"
+_GRAPH_HOST = "https://graph.facebook.com"
+
+
+def _graph_api_base() -> str:
+    """Graph API base URL, versioned from a single setting (WHATSAPP_GRAPH_VERSION)."""
+    version = getattr(settings, "WHATSAPP_GRAPH_VERSION", "v21.0")
+    return f"{_GRAPH_HOST}/{version}"
 
 
 class MetaCloudAPIProvider(WhatsAppProvider):
@@ -47,7 +54,7 @@ class MetaCloudAPIProvider(WhatsAppProvider):
 
     def _url(self, path: str) -> str:
         """Build a full Graph API URL from a path."""
-        return f"{GRAPH_API_BASE}/{path}"
+        return f"{_graph_api_base()}/{path}"
 
     def _post_message(self, payload: dict) -> dict:
         """Post a message payload to the Cloud API.
