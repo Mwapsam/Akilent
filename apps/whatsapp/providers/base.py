@@ -13,6 +13,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from apps.whatsapp.types import (
+    MediaUploadResult,
     MediaUrlResult,
     ReadReceiptResult,
     SendResult,
@@ -117,6 +118,27 @@ class WhatsAppProvider(ABC):
         Raises:
             WhatsAppProviderError: on network failure, etc.
         """
+
+    def list_templates(self, waba_id: str) -> list[dict]:
+        """List message templates for a WhatsApp Business Account.
+
+        Optional capability. Returns Meta's raw template dicts
+        (name, language, category, status, components, id).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support template listing"
+        )
+
+    def upload_media(self, content: bytes, mime_type: str, filename: str = "upload") -> MediaUploadResult:
+        """Upload a local media file and return a reusable provider media id.
+
+        Optional capability — providers that cannot upload raise
+        NotImplementedError. Callers should pre-upload and then call send_media()
+        with the returned id.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support media upload"
+        )
 
     @abstractmethod
     def mark_as_read(self, message_id: str) -> ReadReceiptResult:

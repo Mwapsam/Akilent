@@ -51,6 +51,17 @@ class Conversation(models.Model):
         self.window_expires_at = at + self.SESSION_GAP
         self.save(update_fields=["last_message_at", "window_expires_at"])
 
+    def register_outbound(self, at):
+        """Record a business-initiated message.
+
+        Per Meta's rules an agent-sent message does NOT extend the 24h
+        customer-service window — only an inbound message does — so this only
+        advances ``last_message_at`` for activity tracking.
+        """
+        if self.last_message_at is None or at > self.last_message_at:
+            self.last_message_at = at
+            self.save(update_fields=["last_message_at"])
+
     def close(self):
         self.is_open = False
         self.closed_at = timezone.now()

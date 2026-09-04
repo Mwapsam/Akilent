@@ -23,10 +23,15 @@ class WhatsAppBusinessNumberAdmin(admin.ModelAdmin):
 
 @admin.register(WhatsAppContact)
 class WhatsAppContactAdmin(admin.ModelAdmin):
-    list_display = ("phone_number", "display_name", "account", "last_message_at", "created_at")
-    list_filter = ("account",)
+    list_display = (
+        "phone_number", "display_name", "account", "opt_in_status",
+        "last_message_at", "created_at",
+    )
+    list_filter = ("opt_in_status", "account")
     search_fields = ("phone_number", "display_name")
-    readonly_fields = ("created_at",)
+    readonly_fields = (
+        "created_at", "opt_in_at", "opt_out_at", "opt_in_source", "opt_out_reason",
+    )
 
 
 @admin.register(CrmBinding)

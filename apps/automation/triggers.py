@@ -38,8 +38,7 @@ def on_message_received(event: MessageReceived, **kwargs) -> None:
 
 
 def on_message_sent(message_log) -> None:
-    from apps.automation.workflows import execute_rule
-    from apps.whatsapp.models import AutomationRule
+    from apps.automation.models import AutomationRule
 
     context = {
         "phone_number": message_log.contact.phone_number,

@@ -7,6 +7,7 @@ from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -125,6 +126,31 @@ def domains_list(request):
 
 
 @login_required
+def domain_detail(request, pk):
+    """Full management page for one sending domain: DNS records, verification,
+    enable/disable, delete, and SMTP relay credentials."""
+    from django.conf import settings
+
+    admin = _is_admin(request)
+    account = get_current_account(request)
+    if account is None and not admin:
+        return redirect("dashboard")
+
+    record = get_object_or_404(
+        _scoped(EmailDomain.objects, request, account).select_related("account"), pk=pk
+    )
+    return render(request, "email/domain_detail.html", {
+        "d": record,
+        "account": account,
+        "is_admin": admin,
+        "email_apis_enabled": _require_email_apis(request, record.account),
+        "new_smtp_secret": request.session.pop("new_smtp_secret", None),
+        "smtp_relay_host": settings.SMTP_RELAY_HOST,
+        "smtp_relay_port": settings.SMTP_RELAY_PORT,
+    })
+
+
+@login_required
 @require_POST
 def domain_create(request):
     admin = _is_admin(request)
@@ -160,7 +186,7 @@ def domain_create(request):
     record.ensure_verification_token()
     record.save(update_fields=["verify_record_name", "verify_record_value"])
 
-    kind, message = "success", f"{domain} added — add the DNS records below, then run the DNS check."
+    kind, message = "success", f"{domain} added — add the DNS records on this page, then run the DNS check."
     try:
         DomainService(account, actor=request.user).provision(record)
     except MailProviderError as exc:
@@ -169,10 +195,11 @@ def domain_create(request):
         logger.error("domain_create: mail server error for %s: %s", domain, exc)
         kind, message = "danger", f"Provisioning failed: {exc}"
 
-    if ajax:
-        return _toast(_domain_card(request, record), kind, message)
+    detail_url = reverse("email-domain-detail", args=[record.pk])
     messages.add_message(request, _MSG_LEVEL[kind], message)
-    return redirect("email-domains")
+    if ajax:
+        return JsonResponse({"redirect": detail_url})
+    return redirect(detail_url)
 
 
 @login_required
@@ -209,7 +236,7 @@ def domain_verify(request, pk):
     if ajax:
         return _toast(_domain_card(request, record), kind, message)
     messages.add_message(request, _MSG_LEVEL[kind], message)
-    return redirect("email-domains")
+    return redirect("email-domain-detail", pk=record.pk)
 
 
 @login_required
@@ -239,7 +266,7 @@ def domain_toggle(request, pk):
     messages.add_message(
         request, messages.SUCCESS if kind == "success" else messages.ERROR, message
     )
-    return redirect("email-domains")
+    return redirect("email-domain-detail", pk=record.pk)
 
 
 @login_required
@@ -262,9 +289,9 @@ def domain_delete(request, pk):
         return redirect("email-domains")
     domain_name = record.domain
     record.delete()
-    if ajax:
-        return _toast(HttpResponse(""), "success", f"{domain_name} deleted.")
     messages.success(request, f"{domain_name} deleted.")
+    if ajax:
+        return JsonResponse({"redirect": reverse("email-domains")})
     return redirect("email-domains")
 
 
@@ -298,25 +325,26 @@ def smtp_create(request, pk):
         return redirect("dashboard")
 
     domain = get_object_or_404(_scoped(EmailDomain.objects, request, account), pk=pk)
+    _back = redirect("email-domain-detail", pk=domain.pk)
     if not domain.is_verified:
         messages.error(request, f"{domain.domain} must be verified before creating an SMTP relay credential.")
-        return redirect("email-domains")
+        return _back
     if not _require_email_apis(request, domain.account):
         messages.error(request, "Your plan does not include the email API & SMTP relay. Upgrade to enable it.")
-        return redirect("email-domains")
+        return _back
     if domain.smtp_credentials.filter(is_active=True).exists():
         messages.error(request, f"{domain.domain} already has an active SMTP relay credential.")
-        return redirect("email-domains")
+        return _back
 
     try:
         credential, secret = SmtpCredentialService(domain.account, actor=request.user).provision(domain)
     except Exception as exc:
         messages.error(request, f"Could not create SMTP relay credential: {exc}")
-        return redirect("email-domains")
+        return _back
 
     request.session["new_smtp_secret"] = {"credential_id": credential.pk, "secret": secret}
     messages.success(request, "SMTP relay credential created — copy the password now, it won't be shown again.")
-    return redirect("email-domains")
+    return _back
 
 
 @login_required
@@ -328,15 +356,18 @@ def smtp_rotate(request, pk):
         return redirect("dashboard")
 
     credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
+    detail_url = reverse("email-domain-detail", args=[credential.domain_id])
     try:
         secret = SmtpCredentialService(credential.account, actor=request.user).rotate(credential)
     except Exception as exc:
         messages.error(request, f"Could not rotate SMTP relay credential: {exc}")
-        return redirect("email-domains")
+    else:
+        request.session["new_smtp_secret"] = {"credential_id": credential.pk, "secret": secret}
+        messages.success(request, "SMTP relay password rotated — copy it now, it won't be shown again.")
 
-    request.session["new_smtp_secret"] = {"credential_id": credential.pk, "secret": secret}
-    messages.success(request, "SMTP relay password rotated — copy it now, it won't be shown again.")
-    return redirect("email-domains")
+    if is_ajax(request):
+        return JsonResponse({"redirect": detail_url})
+    return redirect(detail_url)
 
 
 @login_required
@@ -348,14 +379,16 @@ def smtp_revoke(request, pk):
         return redirect("dashboard")
 
     credential = get_object_or_404(_scoped(SmtpCredential.objects, request, account), pk=pk)
+    detail_url = reverse("email-domain-detail", args=[credential.domain_id])
     try:
         SmtpCredentialService(credential.account, actor=request.user).revoke(credential)
+        messages.success(request, f"SMTP relay credential for {credential.username} revoked.")
     except Exception as exc:
         messages.error(request, f"Could not revoke SMTP relay credential: {exc}")
-        return redirect("email-domains")
 
-    messages.success(request, f"SMTP relay credential for {credential.username} revoked.")
-    return redirect("email-domains")
+    if is_ajax(request):
+        return JsonResponse({"redirect": detail_url})
+    return redirect(detail_url)
 
 
 # --- Webhooks -------------------------------------------------------------------

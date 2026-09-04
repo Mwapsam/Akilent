@@ -22,12 +22,30 @@ class SendResult:
     error: Optional[str] = None
     """Error message if success=False (e.g., 'invalid_recipient', 'rate_limit')."""
 
+    error_code: Optional[str] = None
+    """Provider error code (e.g. Meta '131047') when success=False."""
+
+    retryable: bool = True
+    """Whether re-attempting the send could succeed. False for policy/permanent errors."""
+
     metadata: dict = None
     """Extra data from the provider (e.g., timestamp, cost, etc.)."""
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+
+
+@dataclass
+class MediaUploadResult:
+    """Result of uploading a local media file to the provider."""
+
+    media_id: str
+    """Provider media id to reference in a subsequent send_media() call."""
+
+    success: bool = True
+
+    error: Optional[str] = None
 
 
 @dataclass

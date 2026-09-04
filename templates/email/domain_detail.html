@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ d.domain }} — {{ site.app_name|default:"Automator" }}{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <div class="flex items-center gap-2 text-sm text-gray-400 mb-1">
+      <a href="/email/domains/" class="hover:text-gray-600">Sending domains</a>
+      <span>/</span>
+      <span class="text-gray-600">{{ d.domain }}</span>
+    </div>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ d.domain }}</h1>
+    {% if is_admin %}<p class="text-sm text-gray-500 mt-1">{{ d.account.company_name }}</p>{% endif %}
+  </div>
+  <a href="/email/domains/" class="btn btn-secondary btn-sm">
+    {% include "components/icon.html" with name="arrow-left" class="w-4 h-4" %} Back to domains
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "email/_domain_card.html" %}
+{% endblock %}
