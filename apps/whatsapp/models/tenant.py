@@ -31,6 +31,10 @@ class WhatsAppBusinessNumber(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # Max outbound messages/second for this number. Meta's throughput tiers are
+    # 80/s (default) rising to 1000/s; start conservative and raise per number.
+    send_rate_limit = models.PositiveSmallIntegerField(default=20)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

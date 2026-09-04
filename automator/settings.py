@@ -225,6 +225,35 @@ WHATSAPP_APP_ID = os.getenv("WHATSAPP_APP_ID", "")
 WHATSAPP_CONFIG_ID = os.getenv("WHATSAPP_CONFIG_ID", "")
 WHATSAPP_GRAPH_VERSION = os.getenv("WHATSAPP_GRAPH_VERSION", "v21.0")
 
+# Inbound keyword handling for messaging consent. A single-word inbound text
+# matching (case-insensitively) one of these opts the contact out / back in.
+WHATSAPP_STOP_KEYWORDS = [
+    k.strip().upper()
+    for k in os.getenv(
+        "WHATSAPP_STOP_KEYWORDS", "STOP,UNSUBSCRIBE,CANCEL,END,QUIT"
+    ).split(",")
+    if k.strip()
+]
+WHATSAPP_START_KEYWORDS = [
+    k.strip().upper()
+    for k in os.getenv(
+        "WHATSAPP_START_KEYWORDS", "START,UNSTOP,SUBSCRIBE"
+    ).split(",")
+    if k.strip()
+]
+WHATSAPP_OPT_OUT_CONFIRMATION = os.getenv(
+    "WHATSAPP_OPT_OUT_CONFIRMATION",
+    "You've been unsubscribed and won't receive further messages. "
+    "Reply START to opt back in.",
+)
+
+# Largest inbound media file we will pull from Meta and store (bytes).
+# Meta's own ceiling is 100 MB for documents; smaller by default.
+WHATSAPP_MAX_MEDIA_BYTES = int(os.getenv("WHATSAPP_MAX_MEDIA_BYTES", str(25 * 1024 * 1024)))
+
+# Send read receipts (blue ticks) for inbound messages.
+WHATSAPP_MARK_READ_ENABLED = os.getenv("WHATSAPP_MARK_READ_ENABLED", "True").lower() == "true"
+
 if not DEBUG and WHATSAPP_ENABLED:
     if not WHATSAPP_VERIFY_TOKEN:
         raise ValueError("WHATSAPP_VERIFY_TOKEN is missing")
@@ -402,6 +431,7 @@ if WHATSAPP_ENABLED:
     CELERY_TASK_ROUTES.update({
         "apps.whatsapp.tasks.process_whatsapp_event": {"queue": "whatsapp"},
         "apps.whatsapp.tasks.drain_outbound_queue": {"queue": "outbound"},
+        "apps.whatsapp.tasks.mark_read": {"queue": "whatsapp"},
     })
     CELERY_BEAT_SCHEDULE.update({
         "close-expired-conversations": {
@@ -415,6 +445,14 @@ if WHATSAPP_ENABLED:
         "download-media": {
             "task": "apps.whatsapp.tasks.download_media",
             "schedule": 60.0,
+        },
+        "sync-whatsapp-templates": {
+            "task": "apps.whatsapp.tasks.sync_templates",
+            "schedule": 1800.0,  # every 30 min — pull Meta approval status
+        },
+        "alert-on-whatsapp-failure-spike": {
+            "task": "apps.whatsapp.tasks.alert_on_whatsapp_failure_spike",
+            "schedule": 900.0,  # every 15 min
         },
     })
 

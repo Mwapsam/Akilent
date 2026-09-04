@@ -64,6 +64,9 @@ class OutboundSendTest(TestCase):
         self.contact = whatsapp_api.get_or_create_contact(
             self.account, "+260971234567", "Test User"
         )
+        # Open the 24h customer-service window so free-text sends are authorized.
+        self.conversation = Conversation.get_or_open(self.contact)
+        self.conversation.register_inbound(timezone.now())
 
     def _drain_with(self, provider):
         with patch(
@@ -114,11 +117,15 @@ class OutboundSendTest(TestCase):
         self.assertFalse(fetched.apply_status_update("sent"))  # monotonic
 
     def test_successful_send_does_not_extend_24h_window(self):
+        window_before = Conversation.objects.get(
+            contact=self.contact
+        ).window_expires_at
         msg = whatsapp_api.send_message(self.account, self.contact, "hi")
         self._drain_with(_FakeProvider())
         convo = Conversation.objects.get(contact=self.contact)
-        self.assertIsNotNone(convo.last_message_at)
-        self.assertIsNone(convo.window_expires_at)  # only inbound opens the window
+        # last_message_at advances, but the window itself is untouched by an
+        # agent-initiated message (only inbound extends it).
+        self.assertEqual(convo.window_expires_at, window_before)
 
     # --- failure handling ---------------------------------------------
 
@@ -163,6 +170,33 @@ class OutboundSendTest(TestCase):
         provider = _FakeProvider()
         self._drain_with(provider)
         self.assertEqual(len(provider.calls), 1)
+
+    def test_non_retryable_provider_error_fails_immediately(self):
+        msg = whatsapp_api.send_message(self.account, self.contact, "hi")
+        bad = SendResult(
+            message_id="", success=False, error="Template error",
+            error_code="132001", retryable=False,
+        )
+        self._drain_with(_FakeProvider(result=bad))
+
+        msg.refresh_from_db()
+        self.assertEqual(msg.status, OutboundMessage.Status.FAILED)
+        self.assertEqual(msg.error_code, "132001")
+        self.assertEqual(msg.attempts, 1)  # did not burn through the retry budget
+        self.assertEqual(msg.message_log.status, MessageLog.Status.FAILED)
+
+    def test_retryable_provider_error_requeues(self):
+        msg = whatsapp_api.send_message(self.account, self.contact, "hi")
+        bad = SendResult(
+            message_id="", success=False, error="Rate limited",
+            error_code="130429", retryable=True,
+        )
+        self._drain_with(_FakeProvider(result=bad))
+
+        msg.refresh_from_db()
+        self.assertEqual(msg.status, OutboundMessage.Status.QUEUED)
+        self.assertEqual(msg.error_code, "130429")
+        self.assertIsNotNone(msg.next_attempt_at)
 
     def test_stale_sending_message_is_recovered(self):
         msg = whatsapp_api.send_message(self.account, self.contact, "hi")

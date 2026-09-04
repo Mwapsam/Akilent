@@ -31,6 +31,7 @@ class OutboundMessage(models.Model):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.QUEUED
     )
+    error_code = models.CharField(max_length=32, blank=True, default="")
 
     scheduled_at = models.DateTimeField(default=timezone.now)
     attempts = models.PositiveSmallIntegerField(default=0)
@@ -59,7 +60,7 @@ class OutboundMessage(models.Model):
             ),
         ]
 
-    def mark_failed(self, error: str, *, terminal: bool = False):
+    def mark_failed(self, error: str, *, terminal: bool = False, error_code: str = ""):
         """Record a send failure.
 
         ``terminal=True`` (policy violations, non-retryable provider errors)
@@ -69,6 +70,8 @@ class OutboundMessage(models.Model):
         """
         self.attempts += 1
         self.last_error = error[:5000]
+        if error_code:
+            self.error_code = error_code[:32]
         if terminal or self.attempts >= self.MAX_ATTEMPTS:
             self.status = self.Status.FAILED
             self.next_attempt_at = None
@@ -79,7 +82,7 @@ class OutboundMessage(models.Model):
                 minutes=2 ** (self.attempts - 1)
             )
         self.save(update_fields=[
-            "attempts", "last_error", "status", "next_attempt_at",
+            "attempts", "last_error", "status", "next_attempt_at", "error_code",
         ])
 
     def __str__(self):

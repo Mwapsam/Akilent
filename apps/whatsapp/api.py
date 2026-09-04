@@ -128,6 +128,18 @@ def count_active_business_numbers(account: Account) -> int:
     ).count()
 
 
+def outbound_queue_depth(account: Optional[Account] = None) -> int:
+    """Number of OutboundMessages still waiting to be sent.
+
+    Platform-wide by default; pass an account to scope it. Cheap gauge for a
+    health/admin view.
+    """
+    qs = OutboundMessage.objects.filter(status=OutboundMessage.Status.QUEUED)
+    if account is not None:
+        qs = qs.filter(account=account)
+    return qs.count()
+
+
 def count_conversations(account: Account) -> int:
     """Count active conversations for this account.
 

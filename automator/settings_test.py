@@ -32,3 +32,6 @@ CACHES = {
 
 # Force the SES rate limiter onto its in-process fallback (no Redis probe).
 REDIS_URL = ""
+
+# Don't fire the (network) WhatsApp read-receipt task from inbound-message tests.
+WHATSAPP_MARK_READ_ENABLED = False

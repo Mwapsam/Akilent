@@ -1,6 +1,7 @@
 import phonenumbers
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.utils import timezone
 
 
 def normalize_phone(raw: str, default_region: str = "ZM") -> str:
@@ -20,6 +21,11 @@ def normalize_phone(raw: str, default_region: str = "ZM") -> str:
 
 
 class WhatsAppContact(models.Model):
+    class OptInStatus(models.TextChoices):
+        UNKNOWN = "unknown", "Unknown"
+        OPTED_IN = "opted_in", "Opted in"
+        OPTED_OUT = "opted_out", "Opted out"
+
     account = models.ForeignKey(
         "accounts.Account", on_delete=models.CASCADE, related_name="contacts"
     )
@@ -29,12 +35,44 @@ class WhatsAppContact(models.Model):
     last_message_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # --- Messaging consent (Meta policy: outbound requires opt-in; STOP opts out)
+    opt_in_status = models.CharField(
+        max_length=20, choices=OptInStatus.choices, default=OptInStatus.UNKNOWN
+    )
+    opt_in_source = models.CharField(max_length=100, blank=True, default="")
+    opt_in_at = models.DateTimeField(blank=True, null=True)
+    opt_out_at = models.DateTimeField(blank=True, null=True)
+    opt_out_reason = models.CharField(max_length=255, blank=True, default="")
+
     class Meta:
         unique_together = ("account", "phone_number")
 
     def save(self, *args, **kwargs):
         self.phone_number = normalize_phone(self.phone_number)
         super().save(*args, **kwargs)
+
+    @property
+    def is_opted_out(self) -> bool:
+        return self.opt_in_status == self.OptInStatus.OPTED_OUT
+
+    def record_opt_in(self, source: str) -> None:
+        self.opt_in_status = self.OptInStatus.OPTED_IN
+        self.opt_in_source = source[:100]
+        self.opt_in_at = timezone.now()
+        self.opt_out_at = None
+        self.opt_out_reason = ""
+        self.save(update_fields=[
+            "opt_in_status", "opt_in_source", "opt_in_at",
+            "opt_out_at", "opt_out_reason",
+        ])
+
+    def record_opt_out(self, reason: str) -> None:
+        self.opt_in_status = self.OptInStatus.OPTED_OUT
+        self.opt_out_at = timezone.now()
+        self.opt_out_reason = reason[:255]
+        self.save(update_fields=[
+            "opt_in_status", "opt_out_at", "opt_out_reason",
+        ])
 
     @property
     def primary_binding(self):

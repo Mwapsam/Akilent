@@ -52,6 +52,12 @@ class MessageLog(models.Model):
     media_id = models.CharField(max_length=255, blank=True, null=True)
     media_url = models.URLField(max_length=1000, blank=True, null=True)
     media_mime_type = models.CharField(max_length=100, blank=True, null=True)
+    media_file = models.FileField(
+        upload_to="whatsapp/media/%Y/%m/", blank=True, null=True
+    )
+    media_size = models.PositiveIntegerField(blank=True, null=True)
+    media_attempts = models.PositiveSmallIntegerField(default=0)
+    media_error = models.CharField(max_length=500, blank=True, default="")
 
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.QUEUED
