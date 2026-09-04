@@ -1,103 +1,261 @@
 {% extends "base.html" %}
-{% block title %}WhatsApp numbers — {{ site.app_name|default:"Automator" }}{% endblock %}
+{% block title %}WhatsApp Business — {{ site.app_name|default:"Automator" }}{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">WhatsApp Business</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Connect a WhatsApp Business number, get it ready to send, and start
+      receiving customer messages.
+    </p>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
 
-<h1 class="text-2xl font-semibold mb-6">WhatsApp numbers</h1>
+{% if onboarding_complete %}
+<div class="card card-pad mb-6 border-green-200 bg-green-50/50">
+  <div class="flex items-start gap-3">
+    {% include "components/icon.html" with name="check-circle" class="w-5 h-5 text-green-600 shrink-0 mt-0.5" %}
+    <div>
+      <h2 class="font-semibold text-green-800">You're all set</h2>
+      <p class="text-sm text-green-700 mt-1">
+        Your number is connected, registered and receiving messages. Outbound
+        sends run through the queue automatically.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
 
-<!-- Embedded Signup (primary) -->
-<div class="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
-  <h2 class="font-semibold">Connect a WhatsApp number</h2>
+{% if not module_enabled %}
+<div class="card card-pad mb-6 border-amber-200 bg-amber-50/40">
+  <h2 class="font-semibold flex items-center gap-2">
+    {% include "components/icon.html" with name="alert" class="w-4 h-4 text-amber-500" %}
+    WhatsApp isn't enabled on this plan
+  </h2>
+  <p class="text-sm text-gray-600 mt-2">
+    You can connect a number now, but messages won't send until WhatsApp is
+    enabled for your account. <a href="/billing/plans/" class="text-brand-600 font-medium">See plans</a>.
+  </p>
+</div>
+{% endif %}
+
+{# ── Onboarding checklist ─────────────────────────────────────────────── #}
+<div class="card card-pad mb-6">
+  <h2 class="font-semibold mb-4">Setup progress</h2>
+  <ol class="space-y-3">
+    {% for step in steps %}
+    <li class="flex items-start gap-3">
+      {% if step.done %}
+        <span class="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-600">
+          {% include "components/icon.html" with name="check" class="w-4 h-4" %}
+        </span>
+      {% else %}
+        <span class="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full border border-gray-300 text-gray-400 text-xs font-medium">
+          {{ forloop.counter }}
+        </span>
+      {% endif %}
+      <div class="min-w-0">
+        <p class="text-sm font-medium {% if step.done %}text-gray-900{% else %}text-gray-700{% endif %}">
+          {{ step.label }}
+        </p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ step.hint }}</p>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+</div>
+
+{# ── Connect a number ─────────────────────────────────────────────────── #}
+<div class="card card-pad mb-6">
+  <h2 class="font-semibold">Connect a number</h2>
   <p class="text-sm text-gray-500 mt-1">
-    Onboard through Meta — pick or create your WhatsApp Business Account and number.
-    We store the connection automatically; no tokens to copy.
+    Onboard through Meta — pick or create your WhatsApp Business Account and
+    number. We store the connection, register it on the Cloud API and set a
+    verification PIN automatically; no tokens to copy.
   </p>
 
   {% if embedded_enabled %}
-    <button id="wa-connect-btn"
-            class="mt-4 inline-flex items-center gap-2 bg-[#1877F2] hover:bg-[#166fe0] text-white text-sm font-medium px-5 py-2.5 rounded-xl disabled:opacity-60">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 2h-11A4.5 4.5 0 0 0 2 6.5v11A4.5 4.5 0 0 0 6.5 22h11a4.5 4.5 0 0 0 4.5-4.5v-11A4.5 4.5 0 0 0 17.5 2Zm-5.4 16.5c-1 0-1.95-.25-2.78-.7L6 18.6l.83-3.2a5.4 5.4 0 1 1 5.27 3.1Z"/></svg>
+    <button id="wa-connect-btn" class="btn btn-primary mt-4">
+      {% include "components/icon.html" with name="chat" class="w-4 h-4" %}
       Connect with WhatsApp
     </button>
     <p id="wa-connect-status" class="text-sm text-gray-500 mt-3 hidden"></p>
   {% else %}
-    <div class="mt-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3">
-      Embedded Signup isn't configured yet. Set <code>WHATSAPP_APP_ID</code> and
-      <code>WHATSAPP_CONFIG_ID</code> in your environment, or add a number manually below.
+    <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      Embedded Signup isn't configured. Set <code>WHATSAPP_APP_ID</code> and
+      <code>WHATSAPP_CONFIG_ID</code> in the environment, or add a number
+      manually below.
     </div>
   {% endif %}
 
-  <!-- Manual fallback -->
-  <details class="mt-4 group">
-    <summary class="text-sm text-gray-500 cursor-pointer hover:text-gray-700 select-none">
+  {# Manual fallback #}
+  <div x-data="{ open: {% if not numbers and not embedded_enabled %}true{% else %}false{% endif %} }" class="mt-4">
+    <button type="button"
+            class="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700"
+            @click="open = !open" :aria-expanded="open">
+      <span class="inline-flex transition-transform" :class="open ? 'rotate-180' : ''">
+        {% include "components/icon.html" with name="chevron-down" class="w-4 h-4" %}
+      </span>
       Add a number manually instead
-    </summary>
-    <form method="post" action="/whatsapp/numbers/create/" class="grid sm:grid-cols-2 gap-4 mt-4">
-      {% csrf_token %}
-      <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1.5">Phone number ID *</label>
-        <input name="phone_number_id" required
-               class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1.5">Display number</label>
-        <input name="display_number"
-               class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1.5">WABA ID</label>
-        <input name="waba_id"
-               class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1.5">Business ID</label>
-        <input name="business_id"
-               class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-      <div class="sm:col-span-2">
-        <label class="block text-xs font-medium text-gray-600 mb-1.5">Access token (system user / WABA)</label>
-        <input name="access_token" type="password"
-               class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <p class="text-xs text-gray-400 mt-1">Stored encrypted. Used to call the Cloud API for this number.</p>
-      </div>
-      <div class="sm:col-span-2">
-        <button class="bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium px-4 py-2.5 rounded-xl">Register manually</button>
-      </div>
-    </form>
-  </details>
+    </button>
+
+    <div x-show="open" x-cloak x-transition class="mt-4">
+      <p class="text-xs text-gray-400 mb-3">
+        For testing, or when you already have a System User token. Values come
+        from Meta → WhatsApp → API Setup.
+      </p>
+      <form method="post" action="/whatsapp/numbers/create/" class="grid sm:grid-cols-2 gap-4">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">Phone number ID *</label>
+          <input name="phone_number_id" required class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">Display number</label>
+          <input name="display_number" placeholder="+1 555 0100" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">WABA ID</label>
+          <input name="waba_id" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">Business ID</label>
+          <input name="business_id" class="input w-full">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">Access token (System User / WABA)</label>
+          <input name="access_token" type="password" class="input w-full">
+          <p class="text-xs text-gray-400 mt-1">Stored encrypted. Used to call the Cloud API for this number.</p>
+        </div>
+        <div class="sm:col-span-2">
+          <button class="btn btn-secondary">Register manually</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
-<div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-gray-50 text-gray-500 text-left">
-      <tr>
-        <th class="px-4 py-3 font-medium">Phone number ID</th>
-        <th class="px-4 py-3 font-medium">Display</th>
-        <th class="px-4 py-3 font-medium">WABA</th>
-        <th class="px-4 py-3 font-medium">Token</th>
-        <th class="px-4 py-3 font-medium">Active</th>
-        <th class="px-4 py-3"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for n in numbers %}
-        <tr>
-          <td class="px-4 py-3 font-mono text-xs">{{ n.phone_number_id }}</td>
-          <td class="px-4 py-3">{{ n.display_number|default:"—" }}</td>
-          <td class="px-4 py-3">{{ n.waba_id|default:"—" }}</td>
-          <td class="px-4 py-3">{% if n.access_token %}✓{% else %}<span class="text-red-500">missing</span>{% endif %}</td>
-          <td class="px-4 py-3">{% if n.is_active %}✓{% else %}—{% endif %}</td>
-          <td class="px-4 py-3 text-right">
-            <form method="post" action="/whatsapp/numbers/{{ n.pk }}/delete/" onsubmit="return confirm('Remove this number?')">
-              {% csrf_token %}
-              <button class="text-red-600 hover:text-red-800 text-xs">Remove</button>
-            </form>
-          </td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="6" class="px-4 py-6 text-center text-gray-400">No numbers yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{# ── Connected numbers ────────────────────────────────────────────────── #}
+{% if numbers %}
+<div class="space-y-4 mb-6">
+  {% for n in numbers %}
+  <div class="card card-pad">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="font-semibold text-gray-900">{{ n.display_number|default:"WhatsApp number" }}</h3>
+          {% if n.is_active %}<span class="badge badge-success">Active</span>
+          {% else %}<span class="badge badge-neutral">Inactive</span>{% endif %}
+          {% if n.access_token %}<span class="badge badge-success">Token</span>
+          {% else %}<span class="badge badge-danger">No token</span>{% endif %}
+          {% if n.verification_pin %}<span class="badge badge-success">Cloud API registered</span>
+          {% elif n.waba_id %}<span class="badge badge-warning">Not registered</span>{% endif %}
+        </div>
+        <dl class="mt-3 grid gap-2 text-xs max-w-md">
+          <div class="grid grid-cols-[7rem,1fr] items-center gap-2">
+            <dt class="text-gray-500">Phone number ID</dt>
+            <dd class="min-w-0">{% include "components/copy_field.html" with value=n.phone_number_id label="Copy" %}</dd>
+          </div>
+          {% if n.waba_id %}
+          <div class="grid grid-cols-[7rem,1fr] items-center gap-2">
+            <dt class="text-gray-500">WABA ID</dt>
+            <dd class="min-w-0 font-mono text-gray-600 truncate">{{ n.waba_id }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+      </div>
+      <form data-ajax method="post" action="/whatsapp/numbers/{{ n.pk }}/delete/"
+            data-confirm="Disconnect this WhatsApp number? It stops sending and receiving immediately."
+            data-confirm-danger data-confirm-label="Disconnect">
+        {% csrf_token %}
+        <button class="btn btn-danger-ghost btn-sm" type="submit" aria-label="Disconnect number">
+          {% include "components/icon.html" with name="trash" class="w-4 h-4" %}
+        </button>
+      </form>
+    </div>
+
+    {% if not n.access_token %}
+      <div class="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        No access token — this number can't send. Re-run <strong>Connect with WhatsApp</strong>,
+        or add a System User token via the manual form.
+      </div>
+    {% elif n.waba_id and not n.verification_pin %}
+      <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        Not yet registered on the Cloud API. Re-run <strong>Connect with WhatsApp</strong> to
+        finish registration (sends fail with error 133010 until this is done).
+      </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card mb-6">
+  {% include "components/empty_state.html" with icon="chat" title="No number connected yet" message="Connect a WhatsApp Business number above to start messaging customers." %}
+</div>
+{% endif %}
+
+{# ── Webhook setup (operators only) ───────────────────────────────────── #}
+{% if show_webhook_setup %}
+<div class="card card-pad mb-6">
+  <h2 class="font-semibold flex items-center gap-2">
+    {% include "components/icon.html" with name="code-bracket" class="w-4 h-4 text-gray-400" %}
+    Webhook (platform setup)
+  </h2>
+  <p class="text-sm text-gray-500 mt-1">
+    One-time, in Meta → your app → WhatsApp → Configuration. Embedded Signup
+    subscribes each new WABA automatically.
+  </p>
+  <div class="mt-3 grid gap-2 text-xs max-w-xl">
+    <div class="grid grid-cols-[8rem,1fr] items-center gap-2">
+      <dt class="text-gray-500">Callback URL</dt>
+      <dd class="min-w-0">{% include "components/copy_field.html" with value=webhook_url label="Copy" %}</dd>
+    </div>
+    <div class="grid grid-cols-[8rem,1fr] items-start gap-2">
+      <dt class="text-gray-500">Verify token</dt>
+      <dd class="text-gray-600">Match your <code>WHATSAPP_VERIFY_TOKEN</code> env var.</dd>
+    </div>
+    <div class="grid grid-cols-[8rem,1fr] items-start gap-2">
+      <dt class="text-gray-500">Subscribe fields</dt>
+      <dd class="text-gray-600"><code>messages</code>, <code>message_template_status_update</code></dd>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── What you'll need from Meta ───────────────────────────────────────── #}
+<div x-data="{ open: false }" class="card card-pad">
+  <button type="button"
+          class="w-full flex items-center justify-between gap-2 text-left"
+          @click="open = !open" :aria-expanded="open">
+    <span class="font-semibold flex items-center gap-2">
+      {% include "components/icon.html" with name="question" class="w-4 h-4 text-gray-400" %}
+      What you'll need from Meta
+    </span>
+    <span class="inline-flex transition-transform" :class="open ? 'rotate-180' : ''">
+      {% include "components/icon.html" with name="chevron-down" class="w-4 h-4 text-gray-400" %}
+    </span>
+  </button>
+  <div x-show="open" x-cloak x-transition class="mt-4 text-sm text-gray-600 space-y-3">
+    <div>
+      <p class="font-medium text-gray-800">Business Verification</p>
+      <p>Complete in Meta Business Manager. Separate from App Review — Embedded
+        Signup fails for real clients until it passes.</p>
+    </div>
+    <div>
+      <p class="font-medium text-gray-800">App Review</p>
+      <p>Approved for <code>whatsapp_business_messaging</code> and
+        <code>whatsapp_business_management</code>.</p>
+    </div>
+    <div>
+      <p class="font-medium text-gray-800">A phone number</p>
+      <p>A number not already on WhatsApp, or Meta's free test number
+        (WhatsApp → API Setup) for a first run.</p>
+    </div>
+  </div>
 </div>
 
 {% if embedded_enabled %}

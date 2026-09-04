@@ -1,8 +1,12 @@
 import logging
-from datetime import datetime, timezone as dt_timezone
+import mimetypes
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from celery import shared_task
+from django.conf import settings
 from django.core.cache import cache
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.utils import timezone
 
@@ -10,17 +14,33 @@ from apps.core.events import dispatcher, MessageReceived, MessageStatusChanged
 from apps.whatsapp.models import (
     Conversation,
     MessageLog,
+    MessageTemplate,
     OutboundMessage,
     WebhookEventLog,
     WhatsAppContact,
 )
-from apps.whatsapp.models.tenant import TenantResolutionError, get_account_for_webhook
+from apps.whatsapp.models.tenant import (
+    TenantResolutionError,
+    WhatsAppBusinessNumber,
+    get_account_for_webhook,
+)
 
 logger = logging.getLogger(__name__)
 
 _OUTBOUND_BATCH = 50
 _MEDIA_BATCH = 20
 _MAX_EVENT_ATTEMPTS = 3
+_SENDING_STALE = timedelta(minutes=10)
+
+_PAYLOAD_TYPE_TO_LOG_TYPE = {
+    "text": MessageLog.MessageType.TEXT,
+    "template": MessageLog.MessageType.TEMPLATE,
+    "image": MessageLog.MessageType.IMAGE,
+    "audio": MessageLog.MessageType.AUDIO,
+    "video": MessageLog.MessageType.VIDEO,
+    "document": MessageLog.MessageType.DOCUMENT,
+    "sticker": MessageLog.MessageType.STICKER,
+}
 _AUTOMATION_EVENTS_CACHE_KEY = "whatsapp_automation_events_enabled"
 _AUTOMATION_EVENTS_CACHE_TTL = 60  # 60 second cache for SiteSettings flag
 
@@ -44,7 +64,13 @@ def _automation_events_enabled() -> bool:
     return result
 
 
-@shared_task(bind=True, max_retries=_MAX_EVENT_ATTEMPTS, default_retry_delay=60)
+@shared_task(
+    bind=True,
+    max_retries=_MAX_EVENT_ATTEMPTS,
+    default_retry_delay=60,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
 def process_whatsapp_event(self, event_id: int):
     try:
         event = WebhookEventLog.objects.get(pk=event_id)
@@ -60,6 +86,8 @@ def process_whatsapp_event(self, event_id: int):
             _handle_inbound_message(event)
         elif event.event_type == "status":
             _handle_status_update(event)
+        elif event.event_type == "message_template_status_update":
+            _handle_template_status_update(event)
         else:
             logger.debug(
                 "process_whatsapp_event: no handler for event_type=%s", event.event_type
@@ -74,6 +102,38 @@ def process_whatsapp_event(self, event_id: int):
         event.mark_failed(str(exc))
         logger.exception("process_whatsapp_event: unhandled error for event %s", event_id)
         raise self.retry(exc=exc)
+
+
+def _apply_consent_keyword(contact, conversation, body: str) -> None:
+    """Honor STOP / START keywords in an inbound text message.
+
+    A lone keyword (ignoring surrounding whitespace/punctuation) toggles the
+    contact's messaging consent. STOP also closes the open conversation and
+    queues a one-off confirmation reply (allowed past the opt-out block via the
+    ``_consent_ack`` flag).
+    """
+    token = (body or "").strip().strip(".!?").upper()
+    if not token:
+        return
+
+    if token in settings.WHATSAPP_STOP_KEYWORDS:
+        if not contact.is_opted_out:
+            contact.record_opt_out("inbound_keyword")
+        conversation.close()
+        confirmation = settings.WHATSAPP_OPT_OUT_CONFIRMATION
+        if confirmation:
+            OutboundMessage.objects.create(
+                account=contact.account,
+                contact=contact,
+                payload={
+                    "type": "text",
+                    "body": confirmation,
+                    "_consent_ack": True,
+                },
+            )
+            drain_outbound_queue.delay()
+    elif token in settings.WHATSAPP_START_KEYWORDS:
+        contact.record_opt_in("inbound_keyword")
 
 
 def _handle_inbound_message(event: WebhookEventLog) -> None:
@@ -154,6 +214,16 @@ def _handle_inbound_message(event: WebhookEventLog) -> None:
     contact.last_message_at = msg_ts
     contact.save(update_fields=["last_message_at"])
 
+    if created and msg_type == "text":
+        _apply_consent_keyword(contact, conversation, content)
+
+    if (
+        created
+        and message.get("id")
+        and getattr(settings, "WHATSAPP_MARK_READ_ENABLED", True)
+    ):
+        mark_read.delay(account.id, message["id"])
+
     # Publish domain event for subscribers (automation, AI, analytics)
     # IMPORTANT: Only publish for newly created messages to prevent duplicate automation
     # evaluations when webhooks are replayed or messages are reprocessed.
@@ -229,6 +299,24 @@ def _get_provider_for_account(account):
         return None
 
 
+@shared_task
+def mark_read(account_id: int, message_id: str) -> None:
+    """Best-effort blue-tick: tell Meta we've read an inbound message.
+
+    Failures are logged and dropped — a missed read receipt is cosmetic.
+    """
+    from apps.accounts.models import Account
+
+    try:
+        account = Account.objects.get(pk=account_id)
+        provider = _get_provider_for_account(account)
+        if provider is None:
+            return
+        provider.mark_as_read(message_id)
+    except Exception as exc:
+        logger.debug("mark_read: skipped for %s: %s", message_id, exc)
+
+
 def _send_outbound(provider, contact, payload: dict) -> dict:
     """Dispatch an OutboundMessage payload via the provider.
 
@@ -257,23 +345,178 @@ def _send_outbound(provider, contact, payload: dict) -> dict:
                 payload.get("components", payload.get("params", [])) or [],
             )
         elif msg_type in ("image", "audio", "video", "document", "sticker"):
+            media_id = payload.get("media_id")
+            if not media_id and payload.get("media_path"):
+                # Upload a file already sitting in our storage backend, then send.
+                with default_storage.open(payload["media_path"], "rb") as fh:
+                    content = fh.read()
+                upload = provider.upload_media(
+                    content,
+                    payload.get("mime_type", "application/octet-stream"),
+                    payload["media_path"].rsplit("/", 1)[-1],
+                )
+                media_id = upload.media_id
             result = provider.send_media(
-                to, msg_type, payload["media_id"], payload.get("caption", "")
+                to, msg_type, media_id, payload.get("caption", "")
             )
         else:
             result = provider.send_text(to, payload.get("body", payload.get("text", "")))
 
         if not result.success:
-            raise WhatsAppProviderError(f"Send failed: {result.error}")
+            err = WhatsAppProviderError(f"Send failed: {result.error}")
+            err.code = result.error_code or ""
+            err.retryable = result.retryable
+            raise err
 
         return {"success": True, "message_id": result.message_id}
-    except WhatsAppProviderError as e:
+    except WhatsAppProviderError:
         raise
 
 
-@shared_task
+def _log_type_for_payload(payload: dict) -> str:
+    return _PAYLOAD_TYPE_TO_LOG_TYPE.get(
+        payload.get("type", "text"), MessageLog.MessageType.UNKNOWN
+    )
+
+
+def _log_content_for_payload(payload: dict) -> str:
+    ptype = payload.get("type", "text")
+    if ptype == "text":
+        return payload.get("body", payload.get("text", "")) or ""
+    if ptype == "template":
+        return payload.get("template_name", "") or ""
+    return payload.get("caption", "") or ""
+
+
+class SendNotAuthorized(Exception):
+    """Raised when a queued message must not be dispatched (policy failure).
+
+    Carries a stable ``code`` so callers / UI can react (e.g. prompt the user to
+    pick an approved template). Always a terminal failure — never retried.
+    """
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+def _authorize_send(msg: OutboundMessage) -> None:
+    """Enforce WhatsApp messaging policy before a send.
+
+    * template messages require a linked, Meta-approved MessageTemplate;
+    * free-text / media may only go out inside the open 24h customer-service
+      window (an inbound message from the contact in the last 24h).
+    """
+    payload = msg.payload or {}
+
+    # System-generated consent acknowledgements (e.g. the STOP confirmation) are
+    # always allowed — they bypass both the opt-out block and the window check.
+    if payload.get("_consent_ack"):
+        return
+
+    ptype = payload.get("type", "text")
+
+    if msg.contact.opt_in_status == WhatsAppContact.OptInStatus.OPTED_OUT:
+        raise SendNotAuthorized(
+            "CONTACT_OPTED_OUT",
+            "Contact has opted out of WhatsApp messages.",
+        )
+
+    if ptype == "template":
+        template = msg.template
+        if (
+            template is None
+            or template.approval_status != MessageTemplate.ApprovalStatus.APPROVED
+        ):
+            raise SendNotAuthorized(
+                "TEMPLATE_NOT_APPROVED",
+                "Template sends require a linked, Meta-approved MessageTemplate.",
+            )
+        if (
+            template.category == MessageTemplate.Category.MARKETING
+            and msg.contact.opt_in_status != WhatsAppContact.OptInStatus.OPTED_IN
+        ):
+            raise SendNotAuthorized(
+                "MARKETING_REQUIRES_OPT_IN",
+                "Marketing templates require an explicit opt-in from the contact.",
+            )
+        return
+
+    conversation = Conversation.get_or_open(msg.contact)
+    if not conversation.window_is_open:
+        raise SendNotAuthorized(
+            "OUTSIDE_WINDOW_NO_TEMPLATE",
+            "The 24h customer-service window is closed; use an approved template.",
+        )
+
+
+def _ensure_outbound_log(msg: OutboundMessage) -> MessageLog:
+    """Create (once) the MessageLog mirror for an OutboundMessage.
+
+    Every outbound send is mirrored into MessageLog so that status webhooks
+    (delivered/read/failed), which arrive keyed only by the provider message id,
+    have a row to reconcile against.
+    """
+    if msg.message_log_id:
+        return msg.message_log
+
+    if (msg.payload or {}).get("_consent_ack"):
+        # A consent acknowledgement must not resurrect a closed conversation —
+        # attach it to the most recent one (open or closed) if any exists.
+        conversation = (
+            Conversation.objects.filter(contact=msg.contact)
+            .order_by("-created_at")
+            .first()
+        ) or Conversation.get_or_open(msg.contact)
+    else:
+        conversation = Conversation.get_or_open(msg.contact)
+    log = MessageLog.objects.create(
+        account=msg.account,
+        conversation=conversation,
+        contact=msg.contact,
+        direction=MessageLog.Direction.OUTBOUND,
+        message_type=_log_type_for_payload(msg.payload),
+        content=_log_content_for_payload(msg.payload),
+        status=MessageLog.Status.QUEUED,
+        timestamp=timezone.now(),
+        raw_payload=msg.payload,
+    )
+    msg.message_log = log
+    msg.save(update_fields=["message_log"])
+    return log
+
+
+def _throttle_for_account(account, cache: dict) -> None:
+    """Block until a send token is available for the account's active number."""
+    number = cache.get(account.id)
+    if number is None:
+        number = WhatsAppBusinessNumber.objects.filter(
+            account=account, is_active=True
+        ).first()
+        cache[account.id] = number
+    if number is None:
+        return
+    from apps.whatsapp.services import get_whatsapp_rate_limiter
+
+    get_whatsapp_rate_limiter(
+        number.phone_number_id, number.send_rate_limit
+    ).wait_for(1)
+
+
+@shared_task(acks_late=True, reject_on_worker_lost=True)
 def drain_outbound_queue():
     now = timezone.now()
+
+    # Recover messages left mid-flight by a crashed/killed worker.
+    recovered = OutboundMessage.objects.filter(
+        status=OutboundMessage.Status.SENDING,
+        updated_at__lt=now - _SENDING_STALE,
+    ).update(status=OutboundMessage.Status.QUEUED)
+    if recovered:
+        logger.warning(
+            "drain_outbound_queue: recovered %s stale SENDING messages", recovered
+        )
+
     due = (
         OutboundMessage.objects.filter(
             status=OutboundMessage.Status.QUEUED,
@@ -285,6 +528,7 @@ def drain_outbound_queue():
 
     sent = failed = 0
     providers: dict = {}
+    numbers: dict = {}
     for msg in due:
         try:
             provider = providers.get(msg.account_id)
@@ -296,13 +540,45 @@ def drain_outbound_queue():
                     "No active WhatsApp number with an access token for this account."
                 )
 
-            _send_outbound(provider, msg.contact, msg.payload)
+            _authorize_send(msg)
+
+            log = _ensure_outbound_log(msg)
+
+            msg.status = OutboundMessage.Status.SENDING
+            msg.save(update_fields=["status"])
+
+            _throttle_for_account(msg.account, numbers)
+            result = _send_outbound(provider, msg.contact, msg.payload)
+
+            message_id = result.get("message_id") or ""
+            log.message_id = message_id or None
+            log.status = MessageLog.Status.SENT
+            log.save(update_fields=["message_id", "status"])
+
             msg.status = OutboundMessage.Status.SENT
             msg.sent_at = timezone.now()
             msg.save(update_fields=["status", "sent_at"])
+
+            log.conversation.register_outbound(msg.sent_at)
             sent += 1
+        except SendNotAuthorized as exc:
+            msg.mark_failed(f"{exc.code}: {exc}", terminal=True)
+            if msg.message_log_id:
+                MessageLog.objects.filter(pk=msg.message_log_id).update(
+                    status=MessageLog.Status.FAILED
+                )
+            failed += 1
         except Exception as exc:
-            msg.mark_failed(str(exc))
+            code = getattr(exc, "code", "") or ""
+            retryable = getattr(exc, "retryable", True)
+            msg.mark_failed(str(exc), terminal=not retryable, error_code=code)
+            if (
+                msg.message_log_id
+                and msg.status == OutboundMessage.Status.FAILED
+            ):
+                MessageLog.objects.filter(pk=msg.message_log_id).update(
+                    status=MessageLog.Status.FAILED
+                )
             failed += 1
 
     if sent or failed:
@@ -324,23 +600,231 @@ def close_expired_conversations():
         logger.info("close_expired_conversations: closed %s conversations", count)
 
 
+_MEDIA_MAX_ATTEMPTS = 5
+
+
+def _ext_for_mime(mime: str) -> str:
+    if not mime:
+        return ".bin"
+    return mimetypes.guess_extension(mime.split(";")[0].strip()) or ".bin"
+
+
 @shared_task
 def download_media():
+    """Pull inbound media from Meta into the configured Django storage backend.
+
+    Inbound webhooks only carry a ``media_id``; the bytes must be fetched via a
+    short-lived provider URL. A row that keeps failing is retired after
+    ``_MEDIA_MAX_ATTEMPTS`` so it stops being re-selected every run.
+    """
+    from apps.whatsapp.providers import WhatsAppProviderError
+
     pending = (
         MessageLog.objects.filter(
             direction=MessageLog.Direction.INBOUND,
             media_id__isnull=False,
-            media_url__isnull=True,
+            media_file="",
+            media_attempts__lt=_MEDIA_MAX_ATTEMPTS,
         )
         .select_related("account")[:_MEDIA_BATCH]
     )
-    count = 0
+
+    downloaded = failed = 0
+    providers: dict = {}
     for log in pending:
         try:
-            count += 1
+            provider = providers.get(log.account_id)
+            if provider is None:
+                provider = _get_provider_for_account(log.account)
+                providers[log.account_id] = provider
+            if provider is None:
+                raise RuntimeError("No WhatsApp provider available for account.")
+
+            meta = provider.get_media_url(log.media_id)
+            if (
+                meta.size_bytes
+                and meta.size_bytes > settings.WHATSAPP_MAX_MEDIA_BYTES
+            ):
+                raise RuntimeError(
+                    f"Media {meta.size_bytes}B exceeds "
+                    f"WHATSAPP_MAX_MEDIA_BYTES ({settings.WHATSAPP_MAX_MEDIA_BYTES})"
+                )
+
+            content = provider.download_media(meta.url)
+            if len(content) > settings.WHATSAPP_MAX_MEDIA_BYTES:
+                raise RuntimeError("Downloaded media exceeds size limit")
+
+            ext = _ext_for_mime(meta.media_type or log.media_mime_type or "")
+            name = f"whatsapp/{log.account_id}/{log.message_id or log.pk}{ext}"
+            saved = default_storage.save(name, ContentFile(content))
+
+            log.media_file = saved
+            log.media_url = meta.url
+            log.media_mime_type = log.media_mime_type or meta.media_type
+            log.media_size = len(content)
+            log.media_error = ""
+            log.media_attempts = log.media_attempts + 1
+            log.save(update_fields=[
+                "media_file", "media_url", "media_mime_type", "media_size",
+                "media_error", "media_attempts",
+            ])
+            downloaded += 1
         except Exception as exc:
+            log.media_attempts = log.media_attempts + 1
+            log.media_error = str(exc)[:500]
+            log.save(update_fields=["media_attempts", "media_error"])
             logger.warning(
-                "download_media: failed for MessageLog pk=%s: %s", log.pk, exc
+                "download_media: failed for MessageLog pk=%s (attempt %s): %s",
+                log.pk, log.media_attempts, exc,
             )
-    if count:
-        logger.info("download_media: fetched %s media URLs", count)
+            failed += 1
+
+    if downloaded or failed:
+        logger.info(
+            "download_media: downloaded=%s failed=%s", downloaded, failed
+        )
+
+
+# --- Failure-spike alerting -------------------------------------------------
+
+_WA_SPIKE_WINDOW_MINUTES = 60
+_WA_SPIKE_MIN_VOLUME = 30
+_WA_SPIKE_THRESHOLD = 0.20  # 20% of terminal sends FAILED
+_WA_SPIKE_COOLDOWN_SECONDS = 3600
+
+
+@shared_task
+def alert_on_whatsapp_failure_spike() -> dict:
+    """Page operators when outbound WhatsApp sends start failing en masse.
+
+    Watches terminal OutboundMessage states over a short trailing window across
+    the whole platform — a token expiry, a Meta outage, an account pause.
+    Mirrors apps.email.tasks.alert_on_failure_spike.
+    """
+    since = timezone.now() - timedelta(minutes=_WA_SPIKE_WINDOW_MINUTES)
+    terminal = OutboundMessage.objects.filter(
+        updated_at__gte=since,
+        status__in=[OutboundMessage.Status.SENT, OutboundMessage.Status.FAILED],
+    )
+    total = terminal.count()
+    failed = terminal.filter(status=OutboundMessage.Status.FAILED).count()
+    rate = (failed / total) if total else 0.0
+    result = {"total": total, "failed": failed, "rate": round(rate, 4), "alerted": False}
+
+    if total < _WA_SPIKE_MIN_VOLUME or rate < _WA_SPIKE_THRESHOLD:
+        return result
+
+    if cache.get("whatsapp_failure_spike_alerted"):
+        return result  # within cooldown
+    cache.set("whatsapp_failure_spike_alerted", "1", _WA_SPIKE_COOLDOWN_SECONDS)
+    result["alerted"] = True
+
+    logger.error(
+        "WHATSAPP FAILURE SPIKE: %d/%d terminal sends FAILED (%.1f%%) in the last %d min",
+        failed, total, rate * 100, _WA_SPIKE_WINDOW_MINUTES,
+    )
+    try:
+        from apps.billing.slack import post_message
+
+        post_message(
+            f":rotating_light: WhatsApp failure spike — {failed}/{total} sends FAILED "
+            f"({rate:.0%}) in the last {_WA_SPIKE_WINDOW_MINUTES} min. Check the Meta "
+            f"Cloud API / access-token status."
+        )
+    except Exception:
+        logger.exception("whatsapp failure-spike Slack alert failed")
+    return result
+
+
+# --- Meta template sync --------------------------------------------------
+
+_META_TEMPLATE_STATUS_MAP = {
+    "APPROVED": MessageTemplate.ApprovalStatus.APPROVED,
+    "PENDING": MessageTemplate.ApprovalStatus.PENDING,
+    "IN_APPEAL": MessageTemplate.ApprovalStatus.PENDING,
+    "PENDING_DELETION": MessageTemplate.ApprovalStatus.PENDING,
+    "REJECTED": MessageTemplate.ApprovalStatus.REJECTED,
+    "PAUSED": MessageTemplate.ApprovalStatus.PAUSED,
+    "DISABLED": MessageTemplate.ApprovalStatus.PAUSED,
+}
+
+_META_TEMPLATE_STATUS_MAP["FLAGGED"] = MessageTemplate.ApprovalStatus.PAUSED
+
+_VALID_TEMPLATE_CATEGORIES = {c[0] for c in MessageTemplate.Category.choices}
+
+
+def _handle_template_status_update(event: WebhookEventLog) -> None:
+    """Apply a Meta `message_template_status_update` webhook to the local row."""
+    change = event.payload["entry"][0]["changes"][0]
+    value = change.get("value", {})
+    name = value.get("message_template_name")
+    language = value.get("message_template_language") or "en"
+    raw = (value.get("event") or value.get("new_status") or "").upper()
+    mapped = _META_TEMPLATE_STATUS_MAP.get(raw)
+    if not name or not mapped:
+        return
+
+    updated = MessageTemplate.objects.filter(
+        whatsapp_template_name=name, language_code=language
+    ).update(approval_status=mapped)
+    if not updated:
+        MessageTemplate.objects.filter(whatsapp_template_name=name).update(
+            approval_status=mapped
+        )
+
+
+def _upsert_meta_template(account, tpl: dict) -> None:
+    name = tpl.get("name")
+    if not name:
+        return
+    language = tpl.get("language") or "en"
+    status = _META_TEMPLATE_STATUS_MAP.get(
+        (tpl.get("status") or "").upper(), MessageTemplate.ApprovalStatus.PENDING
+    )
+    category = (tpl.get("category") or "").lower()
+    if category not in _VALID_TEMPLATE_CATEGORIES:
+        category = MessageTemplate.Category.UTILITY
+
+    MessageTemplate.objects.update_or_create(
+        account=account,
+        whatsapp_template_name=name,
+        language_code=language,
+        defaults={"approval_status": status, "category": category},
+        create_defaults={
+            "approval_status": status,
+            "category": category,
+            "name": name,
+            "content": "",
+        },
+    )
+
+
+@shared_task
+def sync_templates() -> dict:
+    """Pull template approval status from Meta into local MessageTemplate rows."""
+    from apps.whatsapp.providers import get_whatsapp_provider, WhatsAppProviderError
+
+    numbers = (
+        WhatsAppBusinessNumber.objects.filter(is_active=True)
+        .exclude(waba_id__isnull=True)
+        .exclude(waba_id="")
+        .select_related("account")
+    )
+    synced = errors = 0
+    seen_wabas: set = set()
+    for number in numbers:
+        if number.waba_id in seen_wabas:
+            continue
+        seen_wabas.add(number.waba_id)
+        try:
+            provider = get_whatsapp_provider(number.account)
+            for tpl in provider.list_templates(number.waba_id):
+                _upsert_meta_template(number.account, tpl)
+                synced += 1
+        except (WhatsAppProviderError, NotImplementedError) as exc:
+            logger.warning("sync_templates: waba=%s failed: %s", number.waba_id, exc)
+            errors += 1
+
+    if synced or errors:
+        logger.info("sync_templates: synced=%s errors=%s", synced, errors)
+    return {"synced": synced, "errors": errors}

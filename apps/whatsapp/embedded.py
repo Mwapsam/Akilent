@@ -65,3 +65,28 @@ def subscribe_app_to_waba(waba_id: str, access_token: str) -> None:
             "subscribe_app_to_waba: failed for waba=%s (%s): %s",
             waba_id, resp.status_code, resp.text[:300],
         )
+
+
+def register_phone_number(phone_number_id: str, access_token: str, pin: str) -> None:
+    """Register a number on the Cloud API — required before it can send.
+
+    Meta's Tech Provider Embedded Signup hands us a WABA + phone number, but the
+    number is not usable on the Cloud API until it is registered (otherwise sends
+    fail with error 133010). This call also sets the two-step verification PIN
+    for numbers that don't have one yet.
+
+    Raises:
+        EmbeddedSignupError: if registration is rejected.
+    """
+    resp = requests.post(
+        f"{GRAPH}/{_version()}/{phone_number_id}/register",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"messaging_product": "whatsapp", "pin": pin},
+        timeout=_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        data = resp.json() if resp.content else {}
+        raise EmbeddedSignupError(
+            (data.get("error") or {}).get("message")
+            or f"Phone number registration failed ({resp.status_code})"
+        )
