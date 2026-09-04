@@ -51,6 +51,10 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_REGION_NAME: ${{ secrets.AWS_REGION }}
+          AWS_CLOUDFRONT_DOMAIN: ${{ secrets.AWS_CLOUDFRONT_DOMAIN }}
+          CLOUDFRONT_ID: ${{ secrets.CLOUDFRONT_ID }}
+          AWS_STORAGE_BUCKET_NAME: ${{ secrets.AWS_STORAGE_BUCKET_NAME }}
           SES_CONFIGURATION_SET: ${{ secrets.SES_CONFIGURATION_SET }}
           SES_SNS_TOPIC_ARN: ${{ secrets.SES_SNS_TOPIC_ARN }}
           FLUTTERWAVE_SECRET_KEY: ${{ secrets.FLUTTERWAVE_SECRET_KEY }}
@@ -81,7 +85,8 @@ jobs:
             FLUTTERWAVE_SECRET_KEY,FLUTTERWAVE_WEBHOOK_HASH,FLUTTERWAVE_CURRENCY,
             SLACK_WEBHOOK_URL,
             SENTRY_DSN,SENTRY_ENVIRONMENT,SENTRY_TRACES_SAMPLE_RATE,
-            GUNICORN_WORKERS,GUNICORN_TIMEOUT
+            GUNICORN_WORKERS,GUNICORN_TIMEOUT,
+            AWS_S3_REGION_NAME,AWS_CLOUDFRONT_DOMAIN,CLOUDFRONT_ID,AWS_STORAGE_BUCKET_NAME
           script: |
             set -e
             cd "${{ secrets.DEPLOY_PATH }}"
@@ -126,6 +131,10 @@ jobs:
             AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
             AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
             AWS_REGION=$AWS_REGION
+            AWS_S3_REGION_NAME=$AWS_REGION
+            AWS_CLOUDFRONT_DOMAIN=$AWS_CLOUDFRONT_DOMAIN
+            CLOUDFRONT_ID=$CLOUDFRONT_ID
+            AWS_STORAGE_BUCKET_NAME=$AWS_STORAGE_BUCKET_NAME
             SES_CONFIGURATION_SET=$SES_CONFIGURATION_SET
             SES_SNS_TOPIC_ARN=$SES_SNS_TOPIC_ARN
             FLUTTERWAVE_SECRET_KEY=$FLUTTERWAVE_SECRET_KEY
@@ -144,3 +153,13 @@ jobs:
             docker compose --profile prod run --rm web python manage.py migrate --noinput
             docker compose --profile prod up -d
             docker image prune -f
+
+      - name: Invalidate CloudFront
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.CLOUDFRONT_ID }}" \
+            --paths "/*"

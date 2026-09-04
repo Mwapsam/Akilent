@@ -258,12 +258,21 @@ def signup(request):
 
         config = _build_signup_wizard_config(
             request,
-            # Only what the wizard JS needs to re-open on the right step; the
-            # visible field values re-render from the bound form, and secrets
-            # are never round-tripped through the page.
+            # Step 2 fields are echoed back so the JS-side `fields` object
+            # (bound via x-model, used to gate "Continue" and populate
+            # Review) doesn't blank out what the user already typed.
+            # Passwords are deliberately never round-tripped.
             form_data={
                 "selected_services": request.POST.get("selected_services", ""),
                 "plan": request.POST.get("plan", ""),
+                "first_name": request.POST.get("first_name", ""),
+                "last_name": request.POST.get("last_name", ""),
+                "email": request.POST.get("email", ""),
+                "phone": request.POST.get("phone", ""),
+                "company_name": request.POST.get("company_name", ""),
+                "address_line1": request.POST.get("address_line1", ""),
+                "city": request.POST.get("city", ""),
+                "country": request.POST.get("country", ""),
             },
             errors=form.errors.get_json_data(escape_html=True),
         )

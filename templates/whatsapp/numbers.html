@@ -86,9 +86,14 @@
     <p id="wa-connect-status" class="text-sm text-gray-500 mt-3 hidden"></p>
   {% else %}
     <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      Embedded Signup isn't configured. Set <code>WHATSAPP_APP_ID</code> and
-      <code>WHATSAPP_CONFIG_ID</code> in the environment, or add a number
-      manually below.
+      {% if show_config_detail %}
+        Embedded Signup isn't configured. Set <code>WHATSAPP_APP_ID</code> and
+        <code>WHATSAPP_CONFIG_ID</code> in the environment, or add a number
+        manually below.
+      {% else %}
+        One-click WhatsApp setup isn't available yet — contact support, or
+        add a number manually below.
+      {% endif %}
     </div>
   {% endif %}
 
@@ -108,8 +113,9 @@
         For testing, or when you already have a System User token. Values come
         from Meta → WhatsApp → API Setup.
       </p>
-      <form method="post" action="/whatsapp/numbers/create/" class="grid sm:grid-cols-2 gap-4">
+      <form id="wa-manual-form" method="post" action="/whatsapp/numbers/create/" class="grid sm:grid-cols-2 gap-4">
         {% csrf_token %}
+        <p id="wa-manual-error" class="hidden sm:col-span-2 text-sm text-red-700 rounded-xl border border-red-200 bg-red-50 px-3 py-2" role="alert"></p>
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1.5">Phone number ID *</label>
           <input name="phone_number_id" required class="input w-full">
@@ -132,12 +138,44 @@
           <p class="text-xs text-gray-400 mt-1">Stored encrypted. Used to call the Cloud API for this number.</p>
         </div>
         <div class="sm:col-span-2">
-          <button class="btn btn-secondary">Register manually</button>
+          <button type="submit" class="btn btn-secondary">Register manually</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+<script>
+  (function () {
+    var form = document.getElementById('wa-manual-form');
+    var errorEl = document.getElementById('wa-manual-error');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      errorEl.classList.add('hidden');
+      var btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, body: d }; }); })
+        .then(function (res) {
+          if (res.body.ok) {
+            window.location = res.body.redirect || '/whatsapp/numbers/';
+          } else {
+            btn.disabled = false;
+            errorEl.textContent = res.body.error || 'Could not register this number.';
+            errorEl.classList.remove('hidden');
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          errorEl.textContent = 'Network error. Try again.';
+          errorEl.classList.remove('hidden');
+        });
+    });
+  })();
+</script>
 
 {# ── Connected numbers ────────────────────────────────────────────────── #}
 {% if numbers %}

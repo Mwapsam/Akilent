@@ -40,3 +40,8 @@ def set_current_account(request, account: Account) -> None:
 
 def user_accounts(user):
     return Account.objects.filter(memberships__user=user).distinct()
+
+
+def is_ajax(request) -> bool:
+    """Was this request made via fetch/XHR with the conventional marker header?"""
+    return request.headers.get("x-requested-with") == "XMLHttpRequest"

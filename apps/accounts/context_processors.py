@@ -26,8 +26,12 @@ def onboarding_status(request):
         if account is None:
             return {}
         state = ob.get_state(account)
+        extra = {
+            "onboarding_wants_whatsapp": ob._wants_whatsapp(account),
+            "onboarding_wants_email": ob._wants_email(account),
+        }
         if state["complete"]:
             return {}
-        return {"onboarding": state}
+        return dict({"onboarding": state}, **extra)
     except Exception:
         return {}

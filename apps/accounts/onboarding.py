@@ -171,6 +171,12 @@ def get_state(account) -> dict:
         "done": has_team, "url": "/settings/team/", "cta": "Invite teammate",
         "icon": "user", "optional": True,
     })
+    steps.append({
+        "key": "security", "title": "Review your security settings",
+        "desc": "Check your password and active sessions, and confirm your account details are correct.",
+        "done": bool(account.security_reviewed_at), "url": "/settings/security/", "cta": "Review",
+        "icon": "key", "optional": True,
+    })
 
     required = [s for s in steps if not s["optional"]]
     required_done = sum(1 for s in required if s["done"])

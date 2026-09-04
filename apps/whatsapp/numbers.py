@@ -15,7 +15,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_POST
 
-from apps.accounts.utils import get_current_account
+from apps.accounts.utils import get_current_account, is_ajax
 from apps.whatsapp.models import MessageLog
 from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
 
@@ -100,6 +100,7 @@ def numbers_list(request):
             "module_enabled": module_enabled,
             "webhook_url": webhook_url,
             "show_webhook_setup": request.user.is_staff,
+            "show_config_detail": request.user.is_staff,
         },
     )
 
@@ -197,35 +198,51 @@ def connect_complete(request):
     next_url = ob.advance_onboarding(account)
     if not next_url:
         next_url = "/onboarding/" if was_onboarding else "/whatsapp/numbers/"
+
+    if pin is None:
+        # A flash message (not a JSON field the JS would have to relay) so the
+        # warning survives regardless of where advance_onboarding sends the
+        # user next — it may not be back to the numbers page.
+        messages.warning(
+            request,
+            "Connected, but we couldn't finish activating this number for "
+            "sending — you may need to retry from the numbers page.",
+        )
     return JsonResponse({"ok": True, "redirect": next_url})
 
 
 @login_required
 def numbers_create(request):
     account = get_current_account(request)
+    ajax = is_ajax(request)
     if account is None:
+        if ajax:
+            return JsonResponse({"error": "No account"}, status=400)
         return redirect("dashboard")
 
     if request.method != "POST":
         return redirect("whatsapp-numbers")
 
+    def fail(msg, status=400):
+        if ajax:
+            return JsonResponse({"error": msg}, status=status)
+        messages.error(request, msg)
+        return redirect("whatsapp-numbers")
+
     phone_number_id = (request.POST.get("phone_number_id") or "").strip()
     access_token = (request.POST.get("access_token") or "").strip()
     if not phone_number_id:
-        messages.error(request, "phone_number_id is required.")
-        return redirect("whatsapp-numbers")
+        return fail("Phone number ID is required.")
 
     from apps.billing.limits import LimitChecker, PlanLimitExceeded
 
     try:
         LimitChecker(account).check_whatsapp_number()
     except PlanLimitExceeded as exc:
-        messages.error(request, str(exc))
-        return redirect("whatsapp-numbers")
+        return fail(str(exc), status=403)
 
     if WhatsAppBusinessNumber.objects.filter(phone_number_id=phone_number_id).exists():
-        messages.error(request, "This phone_number_id is already registered.")
-        return redirect("whatsapp-numbers")
+        return fail("This phone number ID is already registered.")
 
     WhatsAppBusinessNumber.objects.create(
         account=account,
@@ -235,16 +252,25 @@ def numbers_create(request):
         business_id=(request.POST.get("business_id") or "").strip() or None,
         display_number=(request.POST.get("display_number") or "").strip() or None,
     )
-    messages.success(request, f"WhatsApp number {phone_number_id} registered.")
 
     from apps.accounts import onboarding as ob
     from apps.accounts.models import Account
 
     was_onboarding = account.onboarding_state != Account.Onboarding.COMPLETED
     next_url = ob.advance_onboarding(account)
-    if next_url:
-        return redirect(next_url)
-    return redirect("onboarding" if was_onboarding else "whatsapp-numbers")
+    if not next_url:
+        next_url = "onboarding" if was_onboarding else "whatsapp-numbers"
+
+    if ajax:
+        redirect_url = next_url if next_url.startswith("/") else reverse(next_url)
+        return JsonResponse({
+            "ok": True,
+            "redirect": redirect_url,
+            "message": f"WhatsApp number {phone_number_id} registered.",
+        })
+
+    messages.success(request, f"WhatsApp number {phone_number_id} registered.")
+    return redirect(next_url)
 
 
 @login_required

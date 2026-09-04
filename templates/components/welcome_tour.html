@@ -1,8 +1,22 @@
 {% comment %}First-run welcome tour. Renders app-wide while onboarding is
 incomplete; auto-opens once (localStorage), and is replayable via the
-`open-welcome-tour` event dispatched by the setup widget.{% endcomment %}
+`open-welcome-tour` event dispatched by the setup widget. Slide content adapts
+to which services (email / WhatsApp) the account actually uses, so a
+WhatsApp-only tenant never sees domain/mailbox instructions and vice
+versa.{% endcomment %}
 <div x-data="{
-        open: false, step: 0, total: 5,
+        open: false, step: 0,
+        wantsEmail: {{ onboarding_wants_email|yesno:'true,false' }},
+        wantsWhatsapp: {{ onboarding_wants_whatsapp|yesno:'true,false' }},
+        get slides() {
+          var s = ['welcome'];
+          if (this.wantsEmail) s.push('domain', 'mailboxes');
+          if (this.wantsWhatsapp) s.push('whatsapp');
+          s.push('team', 'help');
+          return s;
+        },
+        get total() { return this.slides.length; },
+        get current() { return this.slides[this.step]; },
         init() { if (!localStorage.getItem('welcomeTourSeen')) this.open = true; },
         markSeen() { localStorage.setItem('welcomeTourSeen', '1'); },
         next() { if (this.step < this.total - 1) this.step++; else this.finish(); },
@@ -21,47 +35,57 @@ incomplete; auto-opens once (localStorage), and is replayable via the
     </button>
 
     <div class="p-7 text-center">
-      {# Slide 0 — welcome #}
-      <div x-show="step === 0">
+      {# Slide — welcome #}
+      <div x-show="current === 'welcome'">
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
           {% include "components/icon.html" with name="sparkles" class="w-6 h-6" %}
         </span>
         <h2 class="text-lg font-semibold">Welcome to {{ site.app_name|default:"Automator" }}</h2>
-        <p class="text-sm text-gray-500 mt-2">Let's take 30 seconds to show you around. You'll be sending email from your own domain in no time.</p>
+        <p class="text-sm text-gray-500 mt-2">Let's take 30 seconds to show you around.</p>
       </div>
 
-      {# Slide 1 — domains #}
-      <div x-show="step === 1" x-cloak>
+      {# Slide — domains #}
+      <div x-show="current === 'domain'" x-cloak>
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
           {% include "components/icon.html" with name="globe" class="w-6 h-6" %}
         </span>
-        <h2 class="text-lg font-semibold">1 · Set up a sending domain</h2>
+        <h2 class="text-lg font-semibold">Set up a sending domain</h2>
         <p class="text-sm text-gray-500 mt-2">Add your domain, copy the DNS records we generate, and we'll verify them automatically — no technical know-how required.</p>
         <a href="/email/domains/" @click="markSeen()" class="btn btn-secondary btn-sm mt-4">Go to Domains</a>
       </div>
 
-      {# Slide 2 — mailboxes #}
-      <div x-show="step === 2" x-cloak>
+      {# Slide — mailboxes #}
+      <div x-show="current === 'mailboxes'" x-cloak>
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
           {% include "components/icon.html" with name="inbox" class="w-6 h-6" %}
         </span>
-        <h2 class="text-lg font-semibold">2 · Create mailboxes &amp; aliases</h2>
+        <h2 class="text-lg font-semibold">Create mailboxes &amp; aliases</h2>
         <p class="text-sm text-gray-500 mt-2">Once your domain is verified, add real mailboxes and forwarding aliases for your team in a couple of clicks.</p>
         <a href="/email/mailboxes/" @click="markSeen()" class="btn btn-secondary btn-sm mt-4">Go to Mailboxes</a>
       </div>
 
-      {# Slide 3 — team #}
-      <div x-show="step === 3" x-cloak>
+      {# Slide — WhatsApp #}
+      <div x-show="current === 'whatsapp'" x-cloak>
+        <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
+          {% include "components/icon.html" with name="chat" class="w-6 h-6" %}
+        </span>
+        <h2 class="text-lg font-semibold">Connect a WhatsApp number</h2>
+        <p class="text-sm text-gray-500 mt-2">Onboard through Meta — pick or create your WhatsApp Business Account and number. We handle registration and verification automatically.</p>
+        <a href="/whatsapp/numbers/" @click="markSeen()" class="btn btn-secondary btn-sm mt-4">Go to WhatsApp</a>
+      </div>
+
+      {# Slide — team #}
+      <div x-show="current === 'team'" x-cloak>
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
           {% include "components/icon.html" with name="user" class="w-6 h-6" %}
         </span>
-        <h2 class="text-lg font-semibold">3 · Invite your team</h2>
-        <p class="text-sm text-gray-500 mt-2">Bring colleagues in and give them the right role — admins help manage everything, members manage email.</p>
+        <h2 class="text-lg font-semibold">Invite your team</h2>
+        <p class="text-sm text-gray-500 mt-2">Bring colleagues in and give them the right role. You can also review session and password settings any time under Security.</p>
         <a href="/settings/team/" @click="markSeen()" class="btn btn-secondary btn-sm mt-4">Go to Team</a>
       </div>
 
-      {# Slide 4 — help #}
-      <div x-show="step === 4" x-cloak>
+      {# Slide — help #}
+      <div x-show="current === 'help'" x-cloak>
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-100 text-brand-600 mb-4">
           {% include "components/icon.html" with name="book-open" class="w-6 h-6" %}
         </span>
@@ -74,9 +98,9 @@ incomplete; auto-opens once (localStorage), and is replayable via the
     {# Footer: dots + nav #}
     <div class="flex items-center justify-between px-7 py-4 border-t border-border">
       <div class="flex items-center gap-1.5">
-        <template x-for="i in total" :key="i">
+        <template x-for="(s, i) in slides" :key="s">
           <span class="w-1.5 h-1.5 rounded-full transition-colors"
-                :class="(i - 1) === step ? 'bg-brand-600' : 'bg-gray-200'"></span>
+                :class="i === step ? 'bg-brand-600' : 'bg-gray-200'"></span>
         </template>
       </div>
       <div class="flex items-center gap-2">

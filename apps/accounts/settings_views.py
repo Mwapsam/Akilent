@@ -19,17 +19,11 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.forms import AcceptInvitationForm, InviteForm, ProfileForm
 from apps.accounts.models import Invitation, Membership
-from apps.accounts.utils import get_current_account, set_current_account
+from apps.accounts.utils import get_current_account, is_ajax, set_current_account
 
 logger = logging.getLogger(__name__)
 
 MANAGE_ROLES = (Membership.Role.OWNER, Membership.Role.ADMIN)
-
-
-# --- helpers ------------------------------------------------------------------
-
-def _is_ajax(request) -> bool:
-    return request.headers.get("x-requested-with") == "XMLHttpRequest"
 
 
 def _account_and_membership(request):
@@ -90,7 +84,15 @@ def settings_profile(request):
 
 @login_required
 def settings_security(request):
-    account = get_current_account(request)
+    account, membership = _account_and_membership(request)
+    if (
+        account is not None
+        and account.security_reviewed_at is None
+        and membership is not None
+        and membership.role == Membership.Role.OWNER
+    ):
+        account.security_reviewed_at = timezone.now()
+        account.save(update_fields=["security_reviewed_at"])
     if request.method == "POST":
         form = PasswordChangeForm(request.user, request.POST)
         if form.is_valid():
@@ -221,7 +223,7 @@ def member_remove(request, pk):
     account, membership = _account_and_membership(request)
 
     def fail(msg):
-        if _is_ajax(request):
+        if is_ajax(request):
             return JsonResponse({"error": msg}, status=403)
         messages.error(request, msg)
         return redirect("settings-team")
@@ -239,7 +241,7 @@ def member_remove(request, pk):
     # Flash, then let the page reload — the message renders as a toast on the
     # next request (a JS toast would be lost when we navigate via `redirect`).
     messages.success(request, f"{username} removed from the workspace.")
-    if _is_ajax(request):
+    if is_ajax(request):
         return JsonResponse({"redirect": reverse("settings-team")})
     return redirect("settings-team")
 

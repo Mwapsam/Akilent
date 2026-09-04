@@ -13,7 +13,9 @@
  * should open, and any re-render form_data/errors) is read from the
  * #signup-wizard-config JSON script tag. Nothing here bypasses server
  * validation: the last step submits the same <form> to POST /signup/ and
- * every field is a real form control.
+ * every field is a real form control. Step 2's required fields are mirrored
+ * into `fields` (via x-model) purely so "Continue" can be gated client-side
+ * and Review can echo them back — the server still re-validates everything.
  */
 (function () {
   "use strict";
@@ -45,6 +47,26 @@
 
       services: pre.services || fd.selected_services || "",
       plan: pre.plan || fd.plan || "",
+
+      // Step 2 ("Your details") fields, bound via x-model so "Continue" can
+      // be gated the same way steps 0/1 are, and Review can echo them back.
+      fields: {
+        first_name: fd.first_name || "",
+        last_name: fd.last_name || "",
+        email: fd.email || "",
+        phone: fd.phone || "",
+        password1: "",
+        password2: "",
+        company_name: fd.company_name || "",
+        address_line1: fd.address_line1 || "",
+        city: fd.city || "",
+        country: fd.country || "",
+      },
+      step2Required: [
+        "first_name", "last_name", "email", "phone",
+        "password1", "password2", "company_name",
+        "address_line1", "city", "country",
+      ],
 
       init: function () {
         var errs = cfg.errors || {};
@@ -111,6 +133,12 @@
       get canAdvance() {
         if (this.step === 0) return !!this.services;
         if (this.step === 1) return !!this.plan && this._planInList(this.plan);
+        if (this.step === 2) {
+          var f = this.fields;
+          return this.step2Required.every(function (key) {
+            return !!(f[key] && f[key].trim());
+          });
+        }
         return true;
       },
 

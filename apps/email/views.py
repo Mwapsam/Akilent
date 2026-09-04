@@ -13,7 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import Account
-from apps.accounts.utils import get_current_account
+from apps.accounts.utils import get_current_account, is_ajax
 from apps.email import dnscheck
 from apps.email.verification import refresh_domain
 from apps.email.models import (
@@ -46,10 +46,6 @@ def _scoped(manager, request, account):
 
 
 # --- AJAX helpers -------------------------------------------------------------
-
-def is_ajax(request) -> bool:
-    return request.headers.get("x-requested-with") == "XMLHttpRequest"
-
 
 def _toast(response, kind: str, message: str):
     from urllib.parse import quote
@@ -167,7 +163,7 @@ def domain_create(request):
         return redirect("email-domains")
 
     if EmailDomain.objects.filter(domain=domain).exists():
-        msg = "That domain is already registered."
+        msg = "That domain is already connected to another account."
         if ajax:
             return _ajax_error(msg)
         messages.error(request, msg)
@@ -193,7 +189,10 @@ def domain_create(request):
         record.status = EmailDomain.Status.FAILED
         record.save(update_fields=["status"])
         logger.error("domain_create: mail server error for %s: %s", domain, exc)
-        kind, message = "danger", f"Provisioning failed: {exc}"
+        kind, message = "danger", (
+            f"We couldn't finish setting up {domain} — our team has been "
+            "notified. You can retry from this page."
+        )
 
     # Adding the first sending domain clears the "domain_setup" onboarding
     # stage; DNS verification / API key remain as checklist items.

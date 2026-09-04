@@ -4,6 +4,7 @@ Usage: include components/form_field.html with name="email" label="Email" type="
   {% if label %}<label class="label" for="id_{{ name }}">{{ label }}{% if required %} <span class="text-red-500">*</span>{% endif %}</label>{% endif %}
   <input id="id_{{ name }}" name="{{ name }}" type="{{ type|default:'text' }}"
          value="{{ value|default:'' }}"
+         {% if xmodel %}x-model="{{ xmodel }}"{% endif %}
          {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
          {% if required %}required{% endif %}
          {% if error %}aria-invalid="true" aria-describedby="err_{{ name }}"{% elif help %}aria-describedby="help_{{ name }}"{% endif %}

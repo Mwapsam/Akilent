@@ -39,6 +39,10 @@ class Account(models.Model):
     email_verified = models.BooleanField(default=False)
     email_verified_at = models.DateTimeField(null=True, blank=True)
 
+    # Set the first time an owner opens the security settings page, so the
+    # (optional) onboarding checklist item can mark itself done.
+    security_reviewed_at = models.DateTimeField(null=True, blank=True)
+
     # Resumable service-specific onboarding state. Existing rows default to
     # COMPLETED so they're never dragged back into the wizard flow.
     onboarding_state = models.CharField(
