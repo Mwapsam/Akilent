@@ -150,11 +150,6 @@ else:
     ENFORCE_HTTPS = _enforce_https_env.lower() == "true"
 
 if USE_S3_STORAGE:
-    STATICFILES_FINDERS = [
-        "django.contrib.staticfiles.finders.FileSystemFinder",
-        "django.contrib.staticfiles.finders.AppDirectoriesFinder",
-        "compressor.finders.CompressorFinder",
-    ]
     STATICFILES_DIRS = [BASE_DIR / "static"]
 
     AWS_DEFAULT_ACL = "public-read"
