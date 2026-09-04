@@ -4,6 +4,38 @@ The WhatsApp vertical talks directly to the **Meta WhatsApp Cloud API** (no BSP)
 It is gated by `WHATSAPP_ENABLED`; when false, URLs, nav, the Celery schedule and
 startup secret validation are all skipped.
 
+## Meta Tech Provider Program alignment
+
+This platform operates as a **Tech Provider** (ISV) under Meta's Tech Provider
+Program, not as a Solution Partner / BSP. What that means for the implementation:
+
+- **Onboarding is Embedded Signup.** End businesses connect their own WhatsApp
+  Business Account (WABA) through the popup hosted at `/whatsapp/numbers/`
+  (`WHATSAPP_APP_ID` + `WHATSAPP_CONFIG_ID`). `connect_complete`
+  (`apps/whatsapp/numbers.py`) exchanges the OAuth `code` for a
+  business-integration token, subscribes our app to the WABA, and **registers
+  the phone number** on the Cloud API (`POST /{phone_number_id}/register`,
+  setting a stored two-step-verification PIN). Manual `phone_number_id` + token
+  entry stays available as a fallback.
+- **Billing = Path 2 ("Tech Provider Only").** The end client's WABA is billed
+  by **Meta directly** for conversation charges (they attach their own payment
+  method during Embedded Signup). This platform bills **only for the
+  value-added SaaS solution** via `Plan` tiers / `ModuleSubscription`. As a Tech
+  Provider we **must not** extend a line of credit to businesses or add any
+  markup on conversation fees — `apps/billing` has no per-conversation resale
+  pricing and none should be added. `Plan.max_conversations_per_month` is a
+  usage *quota* for the SaaS tier, not a billed rate.
+- **App Review scopes:** `whatsapp_business_messaging` (send/receive) and
+  `whatsapp_business_management` (templates, phone assets, subscribe). Both are
+  required before Embedded Signup works for real clients.
+- **Per-client credentials.** Each `WhatsAppBusinessNumber` stores its own
+  encrypted `access_token` (+ `verification_pin`); the provider factory resolves
+  the token per account. There is no shared platform sending token.
+- **Account sharing / joint BSP solutions** (Tech Provider manages templates
+  while a BSP handles sending + billing) is a future Meta capability; the data
+  model (`waba_id`, `business_id` per number) already accommodates it, but no
+  code path depends on it today.
+
 ## Enabling it
 
 1. Set the env vars (see `.env.example` → WhatsApp section):

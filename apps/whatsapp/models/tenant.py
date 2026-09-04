@@ -29,6 +29,10 @@ class WhatsAppBusinessNumber(models.Model):
     # number. Stored encrypted at rest.
     access_token = EncryptedTextField(blank=True, null=True)
 
+    # Two-step verification PIN set when the number was registered on the Cloud
+    # API (via Embedded Signup). Kept so the number can be re-registered.
+    verification_pin = EncryptedTextField(blank=True, null=True)
+
     is_active = models.BooleanField(default=True)
 
     # Max outbound messages/second for this number. Meta's throughput tiers are

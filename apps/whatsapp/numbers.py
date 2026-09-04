@@ -88,9 +88,12 @@ def connect_complete(request):
         except PlanLimitExceeded as exc:
             return JsonResponse({"error": str(exc)}, status=403)
 
+    import secrets
+
     from apps.whatsapp.embedded import (
         EmbeddedSignupError,
         exchange_code_for_token,
+        register_phone_number,
         subscribe_app_to_waba,
     )
 
@@ -105,6 +108,14 @@ def connect_complete(request):
     except Exception as exc:  # best-effort; don't block the connection
         logger.warning("connect_complete: subscribe failed: %s", exc)
 
+    # Register the number on the Cloud API so it can send (Tech Provider flow).
+    pin = f"{secrets.randbelow(1_000_000):06d}"
+    try:
+        register_phone_number(phone_number_id, token, pin)
+    except Exception as exc:  # best-effort; owner can retry from the dashboard
+        logger.warning("connect_complete: phone registration failed: %s", exc)
+        pin = None
+
     WhatsAppBusinessNumber.objects.update_or_create(
         phone_number_id=phone_number_id,
         defaults={
@@ -112,6 +123,7 @@ def connect_complete(request):
             "access_token": token,
             "waba_id": waba_id or None,
             "business_id": business_id or None,
+            "verification_pin": pin,
         },
     )
     logger.info(
