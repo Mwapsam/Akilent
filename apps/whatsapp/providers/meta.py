@@ -40,6 +40,12 @@ _NON_RETRYABLE_CODES = {
     "131026",  # message undeliverable
     "131051",  # unsupported message type
     "131052",  # media download error (recipient)
+    # 133010 = "phone number not registered". Treated as terminal: connect_complete
+    # registers the number synchronously during Embedded Signup, so a send should
+    # never race ahead of registration. If spurious 133010s ever appear right
+    # after onboarding (WABA subscription / registration not yet propagated on
+    # Meta's side), the failure-spike alerter surfaces the pattern within the
+    # hour; revisit making *this* code retryable-with-short-cap if that happens.
     "133010",  # phone number not registered
     "132000", "132001", "132005", "132007", "132012", "132015", "132016", "132068", "132069",  # template errors
     "133004", "133005", "133006", "133008", "133009", "133016",  # account/registration errors

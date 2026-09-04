@@ -31,6 +31,20 @@ Program, not as a Solution Partner / BSP. What that means for the implementation
 - **Per-client credentials.** Each `WhatsAppBusinessNumber` stores its own
   encrypted `access_token` (+ `verification_pin`); the provider factory resolves
   the token per account. There is no shared platform sending token.
+- **Registration & PIN lifecycle.** `connect_complete` calls
+  `register_phone_number` once, with a freshly generated 6-digit PIN it then
+  stores (`verification_pin`). Registration state and the PIN are properties of
+  the *number*, not the token:
+  - **Token rotation** (error 190 — see below) swaps `access_token` only; the
+    number stays registered and the stored PIN is unchanged. Re-running
+    registration after a rotation is *not* required; if you do, pass the
+    **stored** PIN (`register_phone_number` with a different PIN fails once
+    two-step verification is on).
+  - **A number moving to another account**, or a number whose two-step PIN was
+    changed out-of-band in Meta Business Manager, needs re-registration with the
+    correct PIN — update `verification_pin` to match.
+  - Manual-entry numbers (`numbers_create`) are assumed already registered by
+    whoever supplied the token; `verification_pin` stays null.
 - **Account sharing / joint BSP solutions** (Tech Provider manages templates
   while a BSP handles sending + billing) is a future Meta capability; the data
   model (`waba_id`, `business_id` per number) already accommodates it, but no
@@ -38,6 +52,14 @@ Program, not as a Solution Partner / BSP. What that means for the implementation
 
 ## Enabling it
 
+0. **Meta-side prerequisites** (one-time, per environment — none of these are in
+   this codebase):
+   - **Business Verification** complete in Meta Business Manager. This is the KYB
+     check and is *separate from App Review*; until it passes, Embedded Signup
+     (step 3) fails for real clients even though steps 1–2 look fine.
+   - **App Review** approved for `whatsapp_business_messaging` and
+     `whatsapp_business_management`.
+   - Tech Provider agreement accepted in the Meta Developer Portal.
 1. Set the env vars (see `.env.example` → WhatsApp section):
    - `WHATSAPP_ENABLED=True`
    - `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` — app-level webhook secrets
@@ -148,8 +170,12 @@ per-process fallback (safe only for a single worker).
 | 131026 | undeliverable | terminal |
 | 131051 | unsupported message type | terminal |
 | 132xxx | template errors | terminal |
-| 133xxx | account / registration errors | terminal |
-| 190 | access token expired/invalid | terminal — rotate the number's token |
+| 133004–133016 | account / registration errors | terminal |
+| 133010 | phone number not registered | terminal — but see the note in `_NON_RETRYABLE_CODES`: a burst right after onboarding may just be Meta-side propagation lag, which the failure-spike alert will surface |
+| 190 | access token expired/invalid | terminal — rotate the number's token (registration/PIN survive; see "Registration & PIN lifecycle") |
+
+Any Meta code **not** in `_NON_RETRYABLE_CODES` (`apps/whatsapp/providers/meta.py`)
+is treated as retryable with backoff; HTTP 400/401/403 are terminal regardless.
 
 ## Failure-spike alert
 
