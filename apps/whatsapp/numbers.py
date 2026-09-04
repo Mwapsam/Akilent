@@ -12,9 +12,11 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_POST
 
 from apps.accounts.utils import get_current_account
+from apps.whatsapp.models import MessageLog
 from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
 
 logger = logging.getLogger(__name__)
@@ -26,10 +28,61 @@ def numbers_list(request):
     if account is None:
         return redirect("dashboard")
 
-    numbers = WhatsAppBusinessNumber.objects.filter(account=account).order_by(
-        "phone_number_id"
+    numbers = list(
+        WhatsAppBusinessNumber.objects.filter(account=account).order_by(
+            "phone_number_id"
+        )
     )
     embedded_enabled = bool(settings.WHATSAPP_APP_ID and settings.WHATSAPP_CONFIG_ID)
+
+    active_number = next(
+        (n for n in numbers if n.is_active and n.access_token), None
+    )
+    # Embedded-Signup numbers store a PIN once registered on the Cloud API;
+    # a manually-entered number legitimately has none.
+    needs_registration = bool(
+        active_number and active_number.waba_id and not active_number.verification_pin
+    )
+
+    try:
+        from apps.billing.api import has_feature
+
+        module_enabled = has_feature(account, "whatsapp")
+    except Exception:  # pragma: no cover - billing optional in some setups
+        module_enabled = False
+
+    inbound_seen = MessageLog.objects.filter(
+        account=account, direction=MessageLog.Direction.INBOUND
+    ).exists()
+
+    try:
+        webhook_url = request.build_absolute_uri(reverse("whatsapp-webhook"))
+    except NoReverseMatch:  # urls only mounted when WHATSAPP_ENABLED
+        webhook_url = request.build_absolute_uri("/whatsapp/webhook/")
+
+    steps = [
+        {
+            "label": "Connect a WhatsApp Business number",
+            "done": bool(numbers),
+            "hint": "Use “Connect with WhatsApp” below, or add one manually.",
+        },
+        {
+            "label": "Number ready to send",
+            "done": bool(active_number) and not needs_registration,
+            "hint": "An active number with an access token, registered on the Cloud API.",
+        },
+        {
+            "label": "Receiving messages from customers",
+            "done": inbound_seen,
+            "hint": "Send a message to the number from a phone to confirm inbound works.",
+        },
+        {
+            "label": "WhatsApp enabled on your plan",
+            "done": module_enabled,
+            "hint": "Managed in billing / by your account admin.",
+        },
+    ]
+
     return render(
         request,
         "whatsapp/numbers.html",
@@ -40,6 +93,13 @@ def numbers_list(request):
             "wa_app_id": settings.WHATSAPP_APP_ID,
             "wa_config_id": settings.WHATSAPP_CONFIG_ID,
             "wa_graph_version": settings.WHATSAPP_GRAPH_VERSION,
+            "steps": steps,
+            "onboarding_complete": all(s["done"] for s in steps),
+            "active_number": active_number,
+            "needs_registration": needs_registration,
+            "module_enabled": module_enabled,
+            "webhook_url": webhook_url,
+            "show_webhook_setup": request.user.is_staff,
         },
     )
 
