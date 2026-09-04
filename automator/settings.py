@@ -170,8 +170,8 @@ if USE_S3_STORAGE:
     MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{MEDIAFILES_LOCATION}/"
 
     STORAGES = {
-        "default": {"BACKEND": "task_it.storage_backends.mediaRootS3Boto3Storage"},
-        "staticfiles": {"BACKEND": "task_it.storage_backends.StaticToS3Storage"},
+        "default": {"BACKEND": "automator.storage_backends.mediaRootS3Boto3Storage"},
+        "staticfiles": {"BACKEND": "automator.storage_backends.StaticToS3Storage"},
     }
 else:
     STATIC_URL = "/static/"
