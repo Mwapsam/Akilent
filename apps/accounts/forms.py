@@ -2,32 +2,76 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, UserCreationForm
 from django.contrib.auth.models import User
 
-from apps.accounts.models import Invitation
+from apps.accounts.models import Account, Invitation
 
 
 class SignupForm(UserCreationForm):
-    """Sign-up form: an email, a password, and the company (tenant) name.
+    """Service-first signup: personal + business details that create the User
+    and the Account in one step.
 
     Email is the login credential (see apps.accounts.backends.EmailBackend),
     so there's no separate username field — ``User.username`` is set from the
-    email in the signup view.
+    email in the signup view. ``selected_services`` and ``plan`` come from the
+    wizard's earlier steps and are validated against each other here so the
+    hidden fields can't be tampered.
     """
 
     email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={"autocomplete": "email"}))
+    first_name = forms.CharField(max_length=150, required=True, label="First name")
+    last_name = forms.CharField(max_length=150, required=True, label="Last name")
+
     company_name = forms.CharField(max_length=255, required=True, label="Company name")
-    # Carries the plan chosen on the pricing cards through validation errors;
-    # never shown to the user, just round-tripped.
+    legal_name = forms.CharField(max_length=255, required=False, label="Legal / registered name")
+    website = forms.CharField(max_length=255, required=False)
+    industry = forms.CharField(max_length=120, required=False)
+    company_size = forms.CharField(max_length=40, required=False, label="Company size")
+    phone = forms.CharField(max_length=40, required=True, label="Phone number")
+
+    address_line1 = forms.CharField(max_length=255, required=True, label="Address line 1")
+    address_line2 = forms.CharField(max_length=255, required=False, label="Address line 2")
+    city = forms.CharField(max_length=120, required=True)
+    state_region = forms.CharField(max_length=120, required=False, label="State / region")
+    postal_code = forms.CharField(max_length=40, required=False, label="Postal code")
+    country = forms.CharField(max_length=120, required=True)
+
+    selected_services = forms.ChoiceField(choices=Account.Services.choices)
+    # Chosen on the wizard's Package step; round-tripped through errors.
     plan = forms.CharField(required=False, widget=forms.HiddenInput())
 
     class Meta:
         model = User
-        fields = ("email", "company_name", "plan", "password1", "password2")
+        fields = (
+            "email", "first_name", "last_name", "company_name", "legal_name",
+            "website", "industry", "company_size", "phone", "address_line1",
+            "address_line2", "city", "state_region", "postal_code", "country",
+            "selected_services", "plan", "password1", "password2",
+        )
 
     def clean_email(self):
         email = self.cleaned_data["email"]
         if User.objects.filter(email__iexact=email).exists():
             raise forms.ValidationError("An account with this email already exists.")
         return email
+
+    def clean(self):
+        cleaned = super().clean()
+        services = cleaned.get("selected_services")
+        plan_slug = (cleaned.get("plan") or "").strip()
+        if not plan_slug:
+            self.add_error("plan", "Choose a subscription package.")
+            return cleaned
+
+        from apps.billing.models import Plan
+
+        plan = Plan.objects.filter(slug=plan_slug, is_active=True).first()
+        if plan is None:
+            self.add_error("plan", "That subscription package is no longer available.")
+        elif services and plan.service_type != services:
+            self.add_error(
+                "plan",
+                "That package doesn't match the services you selected.",
+            )
+        return cleaned
 
 
 class LoginForm(AuthenticationForm):

@@ -118,7 +118,14 @@ def connect_complete(request):
         "connect_complete: connected number %s for account %s",
         phone_number_id, account.pk,
     )
-    return JsonResponse({"ok": True, "redirect": "/whatsapp/numbers/"})
+    from apps.accounts import onboarding as ob
+    from apps.accounts.models import Account
+
+    was_onboarding = account.onboarding_state != Account.Onboarding.COMPLETED
+    next_url = ob.advance_onboarding(account)
+    if not next_url:
+        next_url = "/onboarding/" if was_onboarding else "/whatsapp/numbers/"
+    return JsonResponse({"ok": True, "redirect": next_url})
 
 
 @login_required
@@ -157,7 +164,15 @@ def numbers_create(request):
         display_number=(request.POST.get("display_number") or "").strip() or None,
     )
     messages.success(request, f"WhatsApp number {phone_number_id} registered.")
-    return redirect("whatsapp-numbers")
+
+    from apps.accounts import onboarding as ob
+    from apps.accounts.models import Account
+
+    was_onboarding = account.onboarding_state != Account.Onboarding.COMPLETED
+    next_url = ob.advance_onboarding(account)
+    if next_url:
+        return redirect(next_url)
+    return redirect("onboarding" if was_onboarding else "whatsapp-numbers")
 
 
 @login_required

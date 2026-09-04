@@ -8,11 +8,57 @@ from django.utils.text import slugify
 
 
 class Account(models.Model):
+    class Services(models.TextChoices):
+        EMAIL = "email", "Email"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        BOTH = "both", "Email & WhatsApp"
+
+    class Onboarding(models.TextChoices):
+        # service_selection / plan_selection / account_information happen in the
+        # browser wizard before anything is persisted; the first state we store
+        # is ACCOUNT_CREATED.
+        ACCOUNT_CREATED = "account_created", "Account created"
+        WHATSAPP_SETUP = "whatsapp_setup", "WhatsApp setup"
+        DOMAIN_SETUP = "domain_setup", "Domain setup"
+        COMPLETED = "completed", "Completed"
+
     company_name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Which services this tenant signed up for; set by the signup wizard and
+    # used to route service-specific onboarding and tailor the checklist.
+    selected_services = models.CharField(
+        max_length=10, choices=Services.choices, default=Services.EMAIL
+    )
+
+    # Accounts are created active (non-blocking verification); this tracks
+    # whether the owner has since clicked the emailed confirmation link.
+    email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+
+    # Resumable service-specific onboarding state. Existing rows default to
+    # COMPLETED so they're never dragged back into the wizard flow.
+    onboarding_state = models.CharField(
+        max_length=20, choices=Onboarding.choices, default=Onboarding.COMPLETED
+    )
+
+    # Business profile collected during signup. All optional at the DB level so
+    # existing rows and non-wizard creation paths keep working.
+    legal_name = models.CharField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    website = models.CharField(max_length=255, blank=True, default="")
+    industry = models.CharField(max_length=120, blank=True, default="")
+    company_size = models.CharField(max_length=40, blank=True, default="")
+    address_line1 = models.CharField(max_length=255, blank=True, default="")
+    address_line2 = models.CharField(max_length=255, blank=True, default="")
+    city = models.CharField(max_length=120, blank=True, default="")
+    state_region = models.CharField(max_length=120, blank=True, default="")
+    postal_code = models.CharField(max_length=40, blank=True, default="")
+    country = models.CharField(max_length=120, blank=True, default="")
+    billing_email = models.EmailField(blank=True, default="")
 
     # Per-account token for the Progstack domain-verification API.
     progstack_token = models.CharField(max_length=255, blank=True, default="")

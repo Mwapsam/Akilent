@@ -8,6 +8,91 @@ add a domain → verify DNS → start using email → invite the team.
 from django.conf import settings
 
 
+def _wants_whatsapp(account) -> bool:
+    return bool(settings.WHATSAPP_ENABLED) and account.selected_services in (
+        account.Services.WHATSAPP,
+        account.Services.BOTH,
+    )
+
+
+def _wants_email(account) -> bool:
+    # Email steps also cover the fallback case where a WhatsApp-only tenant
+    # landed on an instance where WhatsApp is switched off — otherwise the
+    # checklist would have no required steps at all.
+    return account.selected_services in (
+        account.Services.EMAIL,
+        account.Services.BOTH,
+    ) or not _wants_whatsapp(account)
+
+
+def _has_whatsapp_number(account) -> bool:
+    from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
+
+    return WhatsAppBusinessNumber.objects.filter(account=account).exists()
+
+
+def _has_sending_domain(account) -> bool:
+    from apps.email.models import EmailDomain
+
+    return EmailDomain.objects.filter(account=account).exists()
+
+
+WHATSAPP_SETUP_URL = "/whatsapp/numbers/"
+DOMAIN_SETUP_URL = "/email/domains/"
+
+
+def advance_onboarding(account) -> str:
+    """Recompute the resumable onboarding state from live data, persist it, and
+    return the URL of the next service-specific step ('' once complete).
+
+    The pre-account steps (service selection → plan → account information) live
+    entirely in the signup wizard; the first persisted state is ACCOUNT_CREATED.
+    From there the sequence is, in order, whichever of these still apply:
+
+        WhatsApp connected (Meta Embedded Signup)  →  a sending domain added
+
+    For "Email & WhatsApp" that means Meta onboarding first, then domain setup,
+    matching the documented flow. DNS verification / API-key creation stay as
+    (still-required) checklist items in ``get_state`` rather than blocking the
+    state machine, so slow DNS never strands a user mid-onboarding.
+    """
+    from apps.accounts.models import Account
+
+    if account.onboarding_state == Account.Onboarding.COMPLETED:
+        return ""
+
+    if _wants_whatsapp(account) and not _has_whatsapp_number(account):
+        target, url = Account.Onboarding.WHATSAPP_SETUP, WHATSAPP_SETUP_URL
+    elif _wants_email(account) and not _has_sending_domain(account):
+        target, url = Account.Onboarding.DOMAIN_SETUP, DOMAIN_SETUP_URL
+    else:
+        target, url = Account.Onboarding.COMPLETED, ""
+
+    if account.onboarding_state != target:
+        account.onboarding_state = target
+        account.save(update_fields=["onboarding_state"])
+    return url
+
+
+def resume_url(account) -> str:
+    """Read-only counterpart to ``advance_onboarding`` — the URL an in-progress
+    onboarding should return to, or '' when there's nothing outstanding."""
+    from apps.accounts.models import Account
+
+    if account.onboarding_state == Account.Onboarding.COMPLETED:
+        return ""
+    if _wants_whatsapp(account) and not _has_whatsapp_number(account):
+        return WHATSAPP_SETUP_URL
+    if _wants_email(account) and not _has_sending_domain(account):
+        return DOMAIN_SETUP_URL
+    return ""
+
+
+def first_setup_url(account) -> str:
+    """Where to send a freshly created account for its first setup step."""
+    return advance_onboarding(account) or "/onboarding/"
+
+
 def get_state(account) -> dict:
     from apps.accounts.models import Invitation, Membership
     from apps.email.models import EmailApiKey, EmailDomain
@@ -39,9 +124,15 @@ def get_state(account) -> dict:
             "done": True, "url": None, "cta": None,
             "icon": "check-circle", "optional": False,
         },
+        {
+            "key": "verify_email", "title": "Verify your email address",
+            "desc": "Confirm your email so we can send you delivery reports and alerts.",
+            "done": account.email_verified, "url": "/resend-verification/", "cta": "Resend link",
+            "icon": "mail", "optional": False,
+        },
     ]
 
-    if settings.WHATSAPP_ENABLED:
+    if _wants_whatsapp(account):
         from apps.whatsapp.models.tenant import WhatsAppBusinessNumber
 
         steps.append({
@@ -52,32 +143,34 @@ def get_state(account) -> dict:
             "icon": "chat", "optional": False,
         })
 
-    steps += [
-        {
-            "key": "domain", "title": "Add a sending domain",
-            "desc": "Add the domain you'll send email from, e.g. mail.yourcompany.com.",
-            "done": has_domain, "url": "/email/domains/", "cta": "Add domain",
-            "icon": "globe", "optional": False,
-        },
-        {
-            "key": "verify", "title": "Verify your domain",
-            "desc": "Add the DNS records and run the DNS check to switch sending on.",
-            "done": has_verified, "url": verify_url, "cta": "Verify DNS",
-            "icon": "check-circle", "optional": False,
-        },
-        {
-            "key": "use", "title": "Set up your email API",
-            "desc": "Generate an API key to start sending email from your app.",
-            "done": has_key, "url": "/email/api/", "cta": "Get API key",
-            "icon": "code", "optional": False,
-        },
-        {
-            "key": "team", "title": "Invite your team",
-            "desc": "Bring colleagues into your workspace so they can help manage email.",
-            "done": has_team, "url": "/settings/team/", "cta": "Invite teammate",
-            "icon": "user", "optional": True,
-        },
-    ]
+    if _wants_email(account):
+        steps += [
+            {
+                "key": "domain", "title": "Add a sending domain",
+                "desc": "Add the domain you'll send email from, e.g. mail.yourcompany.com.",
+                "done": has_domain, "url": "/email/domains/", "cta": "Add domain",
+                "icon": "globe", "optional": False,
+            },
+            {
+                "key": "verify", "title": "Verify your domain",
+                "desc": "Add the DNS records and run the DNS check to switch sending on.",
+                "done": has_verified, "url": verify_url, "cta": "Verify DNS",
+                "icon": "check-circle", "optional": False,
+            },
+            {
+                "key": "use", "title": "Set up your email API",
+                "desc": "Generate an API key to start sending email from your app.",
+                "done": has_key, "url": "/email/api/", "cta": "Get API key",
+                "icon": "code", "optional": False,
+            },
+        ]
+
+    steps.append({
+        "key": "team", "title": "Invite your team",
+        "desc": "Bring colleagues into your workspace so they can help manage email.",
+        "done": has_team, "url": "/settings/team/", "cta": "Invite teammate",
+        "icon": "user", "optional": True,
+    })
 
     required = [s for s in steps if not s["optional"]]
     required_done = sum(1 for s in required if s["done"])

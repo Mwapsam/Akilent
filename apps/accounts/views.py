@@ -6,7 +6,7 @@ from django.contrib.auth import login
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.contrib.auth.tokens import default_token_generator
+from django.conf import settings
 from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
+from apps.accounts import onboarding as ob
 from apps.accounts.forms import SignupForm
 from apps.accounts.models import Account, Membership
 from apps.accounts.utils import get_current_account, set_current_account
@@ -70,31 +71,142 @@ class PasswordResetView(auth_views.PasswordResetView):
 
 
 def _send_verification_email(request, user):
-    """Queue an email with a tokened link to activate their account.
+    """Queue an email with a tokened link to confirm the owner's address.
 
     Sent via Celery rather than inline so a slow/unreachable mail server
     retries in the background instead of 500ing the request — the account
     (User/Account/Membership) is already committed by the time this runs.
+    Accounts are created active, so this link only flips ``Account.email_verified``
+    (see apps.accounts.tokens); it is not a gate on signing in.
     """
     from apps.accounts.tasks import send_verification_email
+    from apps.accounts.tokens import email_verification_token
     from apps.core.models import SiteSettings
 
     site_name = SiteSettings.load().app_name or "Automator"
     uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user)
+    token = email_verification_token.make_token(user)
     path = reverse("verify_email", kwargs={"uidb64": uid, "token": token})
     link = request.build_absolute_uri(path)
 
     send_verification_email.delay(user.pk, site_name, link)
 
 
-def signup(request):
-    """Self-service signup: create a User, an Account, and an owner Membership.
+def _mark_email_verified(user):
+    """Flip ``Account.email_verified`` for the owner's account(s)."""
+    from apps.accounts.models import Account
 
-    The user is created inactive and must confirm their email before they can
-    sign in (Django's auth backend refuses inactive users, which gates all
-    provisioning and sending). The trial Subscription is created by the billing
-    post_save signal on Account.
+    accounts = Account.objects.filter(
+        memberships__user=user, memberships__role=Membership.Role.OWNER
+    )
+    accounts.filter(email_verified=False).update(
+        email_verified=True, email_verified_at=timezone.now()
+    )
+
+
+_ACCOUNT_PROFILE_FIELDS = (
+    "legal_name", "website", "industry", "company_size", "phone",
+    "address_line1", "address_line2", "city", "state_region",
+    "postal_code", "country",
+)
+
+
+def _plan_feature_bullets(plan) -> list:
+    """Short marketing bullets for a plan card in the signup wizard.
+
+    Mirrors the capability rows shown on templates/billing/plans.html, kept in
+    Python so the wizard config is a plain JSON blob.
+    """
+    def _cap(value, unit):
+        return f"Unlimited {unit}" if value == -1 else f"{value} {unit}"
+
+    bullets = []
+    if plan.service_type in ("whatsapp", "both"):
+        bullets.append(_cap(plan.max_whatsapp_numbers, "WhatsApp number(s)"))
+        bullets.append(_cap(plan.max_conversations_per_month, "conversations/mo"))
+    if plan.service_type in ("email", "both"):
+        bullets.append(_cap(plan.max_emails_per_month, "emails/mo"))
+        if plan.email_apis:
+            bullets.append("REST API + SMTP relay")
+        if plan.bulk_email:
+            bullets.append("Bulk / campaign sending")
+        if plan.inbound_email:
+            bullets.append("Inbound email processing")
+        if plan.detailed_analytics:
+            bullets.append("Detailed analytics & insights")
+    bullets.append(_cap(plan.max_automation_rules, "automation rule(s)"))
+    if plan.has_priority_support:
+        bullets.append("Priority support")
+    return bullets
+
+
+def _build_signup_wizard_config(request, *, form_data=None, errors=None):
+    from django.middleware.csrf import get_token
+    from apps.billing.models import Plan
+    from apps.core.models import SiteSettings
+
+    plans = [
+        {
+            "slug": p.slug,
+            "name": p.name,
+            "serviceType": p.service_type,
+            "priceMonthly": float(p.price_monthly),
+            "trialDays": p.trial_days,
+            "popular": p.slug == Plan.PROFESSIONAL,
+            "features": _plan_feature_bullets(p),
+        }
+        for p in Plan.objects.filter(is_active=True).order_by("price_monthly")
+    ]
+
+    site = SiteSettings.load()
+    whatsapp_enabled = bool(settings.WHATSAPP_ENABLED) and getattr(
+        site, "whatsapp_enabled", True
+    )
+
+    # Figure out where the wizard should open.
+    services = (form_data or {}).get("selected_services", "")
+    plan_slug = (form_data or {}).get("plan", "")
+    if not services and not plan_slug:
+        req_plan = request.GET.get("plan", "").strip()
+        req_services = request.GET.get("services", "").strip()
+        matched = next((p for p in plans if p["slug"] == req_plan), None) if req_plan else None
+        if matched:
+            services, plan_slug = matched["serviceType"], matched["slug"]
+            start_step = 2
+        elif req_services in dict(Account.Services.choices):
+            services, start_step = req_services, 1
+        else:
+            start_step = 0
+    else:
+        start_step = 2
+
+    return {
+        "csrfToken": get_token(request),
+        "whatsappEnabled": whatsapp_enabled,
+        "plans": plans,
+        "serviceChoices": [
+            {"value": v, "label": l} for v, l in Account.Services.choices
+        ],
+        "preselect": {
+            "services": services,
+            "plan": plan_slug,
+            "startStep": start_step,
+        },
+        "formData": form_data or {},
+        "errors": errors or {},
+    }
+
+
+def signup(request):
+    """Service-first self-service signup wizard.
+
+    One page, one POST: the user picks services, a package, then enters
+    personal + business details. That single submit creates the User, the
+    Account (with its business profile and selected services), and the owner
+    Membership. The user is logged in immediately; a verification email is sent
+    in the background and surfaced as an onboarding step rather than gating
+    access. The trial Subscription is created by the billing post_save signal
+    on Account and re-pointed to the chosen plan by ``_apply_selected_plan``.
     """
     if request.user.is_authenticated:
         return redirect("dashboard")
@@ -107,32 +219,59 @@ def signup(request):
     if request.method == "POST":
         form = SignupForm(request.POST)
         if form.is_valid():
+            cd = form.cleaned_data
             with transaction.atomic():
                 user = form.save(commit=False)
-                user.email = form.cleaned_data["email"]
+                user.email = cd["email"]
                 # Email is the login credential (EmailBackend); username is
                 # just an internal identifier Django's User model requires.
-                user.username = form.cleaned_data["email"][:150]
-                user.is_active = False
+                user.username = cd["email"][:150]
+                user.first_name = cd["first_name"]
+                user.last_name = cd["last_name"]
+                user.is_active = True
                 user.save()
 
                 account = Account.objects.create(
-                    company_name=form.cleaned_data["company_name"],
+                    company_name=cd["company_name"],
+                    selected_services=cd["selected_services"],
+                    onboarding_state=Account.Onboarding.ACCOUNT_CREATED,
+                    billing_email=cd["email"],
+                    **{f: cd.get(f, "") for f in _ACCOUNT_PROFILE_FIELDS},
                 )
                 Membership.objects.create(
                     user=user, account=account, role=Membership.Role.OWNER
                 )
-                _apply_selected_plan(account, form.cleaned_data.get("plan"))
+                _apply_selected_plan(account, cd.get("plan"))
 
+            login(request, user, backend="apps.accounts.backends.EmailBackend")
+            set_current_account(request, account)
             _send_verification_email(request, user)
             logger.info(
-                "signup: created inactive account %s for user %s", account.pk, user.pk
+                "signup: created account %s (%s) for user %s",
+                account.pk, account.selected_services, user.pk,
             )
-            return render(request, "accounts/verify_email_sent.html", {"email": user.email})
-    else:
-        form = SignupForm(initial={"plan": request.GET.get("plan", "")})
+            messages.success(
+                request,
+                "Your account is ready. We've emailed a link to verify your address.",
+            )
+            return redirect(ob.first_setup_url(account))
 
-    return render(request, "accounts/signup.html", {"form": form})
+        config = _build_signup_wizard_config(
+            request,
+            # Only what the wizard JS needs to re-open on the right step; the
+            # visible field values re-render from the bound form, and secrets
+            # are never round-tripped through the page.
+            form_data={
+                "selected_services": request.POST.get("selected_services", ""),
+                "plan": request.POST.get("plan", ""),
+            },
+            errors=form.errors.get_json_data(escape_html=True),
+        )
+        return render(request, "accounts/signup.html", {"form": form, "wizard_config": config}, status=400)
+
+    form = SignupForm()
+    config = _build_signup_wizard_config(request)
+    return render(request, "accounts/signup.html", {"form": form, "wizard_config": config})
 
 
 def _apply_selected_plan(account, plan_slug):
@@ -163,9 +302,14 @@ def _apply_selected_plan(account, plan_slug):
 
 
 def verify_email(request, uidb64, token):
-    """Activate a user from a signup verification link and sign them in."""
-    if request.user.is_authenticated:
-        return redirect("dashboard")
+    """Confirm the owner's email address from the emailed link.
+
+    Accounts are created active and the owner is already signed in, so this
+    just marks ``Account.email_verified`` and clears that onboarding step. It
+    works whether or not the visitor happens to be logged in (e.g. opening the
+    link on another device).
+    """
+    from apps.accounts.tokens import email_verification_token
 
     try:
         uid = force_str(urlsafe_base64_decode(uidb64))
@@ -173,41 +317,64 @@ def verify_email(request, uidb64, token):
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         user = None
 
-    if user is not None and user.is_active:
-        # Already verified — send them to sign in rather than error.
-        return redirect("login")
+    already_verified = user is not None and not Account.objects.filter(
+        memberships__user=user,
+        memberships__role=Membership.Role.OWNER,
+        email_verified=False,
+    ).exists()
 
-    if user is not None and default_token_generator.check_token(user, token):
-        user.is_active = True
-        user.save(update_fields=["is_active"])
-        login(request, user, backend="apps.accounts.backends.EmailBackend")
-        membership = Membership.objects.filter(user=user).select_related("account").first()
-        if membership is not None:
-            set_current_account(request, membership.account)
-        logger.info("verify_email: activated user %s", user.pk)
-        return redirect("onboarding")
+    if user is not None and (already_verified or email_verification_token.check_token(user, token)):
+        _mark_email_verified(user)
+        if not request.user.is_authenticated and user.is_active:
+            login(request, user, backend="apps.accounts.backends.EmailBackend")
+            membership = Membership.objects.filter(user=user).select_related("account").first()
+            if membership is not None:
+                set_current_account(request, membership.account)
+        logger.info("verify_email: confirmed email for user %s", user.pk)
+        if request.user.is_authenticated:
+            messages.success(request, "Your email address is verified. Thanks!")
+            return redirect("onboarding")
+        return redirect("login")
 
     return render(request, "accounts/verify_email_invalid.html", status=400)
 
 
 def resend_verification(request):
-    """Let a user request a fresh verification link if the first one was lost or expired.
+    """Send a fresh confirmation link if the first was lost or expired.
 
     Avoids confirming/denying account existence to a third party by always
-    showing the same "check your email" outcome for a not-found or already
-    inactive account; an already-active account is sent straight to sign in
-    since that's more helpful than a silent no-op.
+    showing the same "check your email" outcome. A signed-in owner whose email
+    is still unverified can trigger it straight from the onboarding step.
     """
+    def _owner_account(user):
+        return (
+            Account.objects.filter(
+                memberships__user=user, memberships__role=Membership.Role.OWNER
+            )
+            .order_by("pk")
+            .first()
+        )
+
     if request.user.is_authenticated:
-        return redirect("dashboard")
+        account = _owner_account(request.user)
+        if account is not None and account.email_verified:
+            messages.info(request, "Your email address is already verified.")
+            return redirect("onboarding")
+        if request.method == "POST":
+            _send_verification_email(request, request.user)
+            logger.info("resend_verification: resent link to user %s", request.user.pk)
+            messages.success(request, "Sent — check your inbox for the confirmation link.")
+            return redirect("onboarding")
+        return render(request, "accounts/resend_verification.html", {"email": request.user.email})
 
     if request.method == "POST":
         email = request.POST.get("email", "").strip()
         user = User.objects.filter(email__iexact=email).first()
-        if user is not None and user.is_active:
-            messages.info(request, "That account is already verified — sign in below.")
-            return redirect("login")
-        if user is not None and not user.is_active:
+        if user is not None:
+            account = _owner_account(user)
+            if account is not None and account.email_verified and user.is_active:
+                messages.info(request, "That account is already verified — sign in below.")
+                return redirect("login")
             _send_verification_email(request, user)
             logger.info("resend_verification: resent link to user %s", user.pk)
         return render(request, "accounts/verify_email_sent.html", {"email": email})
@@ -233,6 +400,8 @@ def onboarding(request):
     if account is None:
         return redirect("signup")
 
+    # Keep the persisted resume-state in step with reality on each visit.
+    ob.advance_onboarding(account)
     state = ob.get_state(account)
     return render(request, "accounts/onboarding.html", {
         "account": account,

@@ -1,14 +1,18 @@
 {% comment %}Shared Plan form fields for the admin create/edit modals.
 `plan` may be undefined (create) → fields fall back to sensible defaults.{% endcomment %}
+<label class="block text-sm mb-3">
+  <span class="text-gray-600">Services covered</span>
+  <select name="service_type" class="mt-1 block w-full rounded border-border-strong text-sm">
+    {% for value, label in plan_service_type_choices %}
+      <option value="{{ value }}" {% if plan.service_type == value or not plan and value == "email" %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</label>
 <div class="grid sm:grid-cols-2 gap-3">
   {% include "components/form_field.html" with name="name" label="Name" value=plan.name required=True %}
   {% include "components/form_field.html" with name="price_monthly" label="Price /mo (USD)" type="number" value=plan.price_monthly|default:0 %}
   {% include "components/form_field.html" with name="max_emails_per_month" label="Max emails/mo (-1 = ∞)" type="number" value=plan.max_emails_per_month|default:0 %}
   {% include "components/form_field.html" with name="max_bulk_recipients_per_campaign" label="Max recipients/campaign (-1 = ∞)" type="number" value=plan.max_bulk_recipients_per_campaign|default:500 %}
-  {% include "components/form_field.html" with name="max_mailboxes" label="Max mailboxes (-1 = ∞)" type="number" value=plan.max_mailboxes|default:0 %}
-  {% include "components/form_field.html" with name="mailbox_storage_gb" label="Storage per mailbox (GB)" type="number" value=plan.mailbox_storage_gb|default:0 %}
-  {% include "components/form_field.html" with name="max_forwarding_rules" label="Forwarding rules (-1 = ∞)" type="number" value=plan.max_forwarding_rules|default:0 %}
-  {% include "components/form_field.html" with name="max_aliases" label="Email aliases (-1 = ∞)" type="number" value=plan.max_aliases|default:0 %}
   {% include "components/form_field.html" with name="max_conversations_per_month" label="Max conversations/mo" type="number" value=plan.max_conversations_per_month|default:0 %}
   {% include "components/form_field.html" with name="max_whatsapp_numbers" label="Max WhatsApp numbers" type="number" value=plan.max_whatsapp_numbers|default:0 %}
   {% include "components/form_field.html" with name="max_automation_rules" label="Max automation rules" type="number" value=plan.max_automation_rules|default:0 %}

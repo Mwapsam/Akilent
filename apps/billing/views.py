@@ -50,6 +50,7 @@ def pricing_page(request):
         "is_admin": is_admin,
         "subscription": subscription,
         "current_plan_slug": current_plan_slug,
+        "plan_service_type_choices": Plan.SERVICE_TYPE_CHOICES,
         "conversations_used": UsageSummary.get_current_usage(account) if account else 0,
         "emails_used": UsageSummary.get_current_email_usage(account) if account else 0,
         "payments_enabled": site.payments_enabled,
@@ -76,13 +77,15 @@ def _plan_form_fields(post):
         price = Decimal(post.get("price_monthly") or "0")
     except InvalidOperation:
         price = Decimal("0")
+    service_type = post.get("service_type") or Plan.SERVICE_EMAIL
+    if service_type not in dict(Plan.SERVICE_TYPE_CHOICES):
+        service_type = Plan.SERVICE_EMAIL
     return {
         "name": (post.get("name") or "").strip(),
+        "service_type": service_type,
         "price_monthly": price,
         "max_conversations_per_month": _int("max_conversations_per_month"),
         "max_emails_per_month": _int("max_emails_per_month"),
-        "max_forwarding_rules": _int("max_forwarding_rules"),
-        "max_aliases": _int("max_aliases"),
         "max_automation_rules": _int("max_automation_rules"),
         "max_whatsapp_numbers": _int("max_whatsapp_numbers"),
         "max_bulk_recipients_per_campaign": _int("max_bulk_recipients_per_campaign", 500),
