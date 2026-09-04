@@ -195,18 +195,13 @@ def domain_create(request):
         logger.error("domain_create: mail server error for %s: %s", domain, exc)
         kind, message = "danger", f"Provisioning failed: {exc}"
 
-<<<<<<< HEAD
     # Adding the first sending domain clears the "domain_setup" onboarding
     # stage; DNS verification / API key remain as checklist items.
     from apps.accounts import onboarding as ob
 
     ob.advance_onboarding(account)
 
-    if ajax:
-        return _toast(_domain_card(request, record), kind, message)
-=======
     detail_url = reverse("email-domain-detail", args=[record.pk])
->>>>>>> 3dc6723da0b27bb4185de5647d290b5dc94dc65a
     messages.add_message(request, _MSG_LEVEL[kind], message)
     if ajax:
         return JsonResponse({"redirect": detail_url})
