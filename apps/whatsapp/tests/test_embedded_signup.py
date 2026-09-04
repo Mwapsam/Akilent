@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import responses
 from django.contrib.auth.models import User
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.test import RequestFactory, TestCase, override_settings
 
 from apps.accounts.models import Account
@@ -70,6 +71,12 @@ class ConnectCompleteTest(TestCase):
             content_type="application/json",
         )
         request.user = self.user
+        # connect_complete may flash a message (e.g. registration-failure
+        # warning); RequestFactory requests have no session/message
+        # middleware, so attach a minimal storage the same way Django's own
+        # test docs recommend for view-level message assertions.
+        request.session = {}
+        request._messages = FallbackStorage(request)
         return request
 
     def _post(self, payload):
