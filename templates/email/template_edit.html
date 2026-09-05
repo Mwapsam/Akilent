@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Edit {{ template.name }} — {{ site.app_name|default:"Automator" }}{% endblock %}
 
 {% block page_header %}
@@ -88,19 +89,19 @@
   </div>
 </div>
 
-<script src="/static/js/merge-tag-autocomplete.js"></script>
-<script src="/static/js/sample-variables-editor.js"></script>
-<script src="/static/js/template-preview.js"></script>
+<script src="{% static 'js/merge-tag-autocomplete.js' %}"></script>
+<script src="{% static 'js/sample-variables-editor.js' %}"></script>
+<script src="{% static 'js/template-preview.js' %}"></script>
 {% if mode == 'blocks' %}
-<link rel="stylesheet" href="/static/js/vendor/grapesjs/grapes.min.css">
-<script src="/static/js/vendor/grapesjs/grapes.min.js"></script>
-<script src="/static/js/vendor/grapesjs/grapesjs-preset-newsletter.min.js"></script>
-<script src="/static/js/email-builder.js"></script>
+<link rel="stylesheet" href="{% static 'js/vendor/grapesjs/grapes.min.css' %}">
+<script src="{% static 'js/vendor/grapesjs/grapes.min.js' %}"></script>
+<script src="{% static 'js/vendor/grapesjs/grapesjs-preset-newsletter.min.js' %}"></script>
+<script src="{% static 'js/email-builder.js' %}"></script>
 {% else %}
-<script src="/static/js/raw-editor.js"></script>
+<script src="{% static 'js/raw-editor.js' %}"></script>
 {% endif %}
-<script src="/static/js/draft-autosave.js"></script>
-<script src="/static/js/send-test.js"></script>
+<script src="{% static 'js/draft-autosave.js' %}"></script>
+<script src="{% static 'js/send-test.js' %}"></script>
 
 {% if template.versions.all %}
 <div class="card card-pad">

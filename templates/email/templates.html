@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Email templates — {{ site.app_name|default:"Automator" }}{% endblock %}
 
 {% block page_header %}
@@ -67,7 +68,7 @@
   </form>
 </div>
 
-<script src="/static/js/template-starter-picker.js"></script>
+<script src="{% static 'js/template-starter-picker.js' %}"></script>
 
 {# Templates list #}
 {% if templates %}
@@ -169,7 +170,7 @@ requests.post(
 
 {% include "email/_api_code_modal.html" %}
 {% include "email/_preview_modal.html" %}
-<script src="/static/js/code-tabs.js"></script>
+<script src="{% static 'js/code-tabs.js' %}"></script>
 
 {% else %}
 <div class="card mb-8">

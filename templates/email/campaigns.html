@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Bulk campaigns — {{ site.app_name|default:"Automator" }}{% endblock %}
 
 {% block page_header %}
@@ -32,7 +33,7 @@
 
 {# ── Guided campaign wizard ─────────────────────────────────────────────── #}
 {{ wizard_config|json_script:"campaign-wizard-config" }}
-<script src="/static/js/campaign-wizard.js?v=2"></script>
+<script src="{% static 'js/campaign-wizard.js' %}?v=2"></script>
 
 <div class="card card-pad mb-6" x-data="campaignWizard()">
   <h2 class="font-semibold">New campaign</h2>

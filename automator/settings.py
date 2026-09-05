@@ -152,7 +152,12 @@ else:
 if USE_S3_STORAGE:
     STATICFILES_DIRS = [BASE_DIR / "static"]
 
-    AWS_DEFAULT_ACL = "public-read"
+    # Buckets created since April 2023 default to Object Ownership "Bucket
+    # owner enforced", which disables ACLs outright — sending one on upload
+    # (the old public-read default) makes every PutObject fail with
+    # AccessControlListNotSupported. Public read comes from the bucket policy
+    # instead; don't set an ACL at all.
+    AWS_DEFAULT_ACL = None
     AWS_QUERYSTRING_AUTH = False
 
     AWS_S3_OBJECT_PARAMETERS = {
