@@ -311,6 +311,7 @@
   // Session info from the Embedded Signup popup (phone_number_id, waba_id).
   let waSession = {};
   window.addEventListener('message', function (event) {
+    console.log('[wa-embedded] postMessage', event.origin, event.data);
     if (event.origin !== 'https://www.facebook.com' &&
         event.origin !== 'https://web.facebook.com') return;
     try {
@@ -322,7 +323,7 @@
           waSession.business_id = data.data.business_id;
         }
       }
-    } catch (e) { /* not our message */ }
+    } catch (e) { console.warn('[wa-embedded] message JSON.parse failed', e, event.data); }
   });
 
   function setStatus(msg, isError) {
@@ -335,6 +336,7 @@
   document.getElementById('wa-connect-btn').addEventListener('click', function () {
     const btn = this;
     FB.login(function (response) {
+      console.log('[wa-embedded] FB.login response', response, 'waSession', waSession);
       if (response.authResponse && response.authResponse.code) {
         btn.disabled = true;
         setStatus('Finishing connection…', false);
