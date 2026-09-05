@@ -308,8 +308,54 @@
     });
   };
 
-  // Session info from the Embedded Signup popup (phone_number_id, waba_id).
+  // Session info from the Embedded Signup popup (phone_number_id, waba_id) and the
+  // OAuth code from FB.login arrive as two independent, unordered async signals.
+  // We only call the backend once both have shown up.
   let waSession = {};
+  let pendingCode = null;
+  let completing = false;
+  let connectBtn = null;
+  let waitTimer = null;
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById('wa-connect-status');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    el.classList.toggle('text-red-600', !!isError);
+  }
+
+  function tryCompleteConnection() {
+    if (completing || !pendingCode || !waSession.phone_number_id) return;
+    completing = true;
+    if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+    if (connectBtn) connectBtn.disabled = true;
+    setStatus('Finishing connection…', false);
+    fetch('/whatsapp/connect/complete/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+      body: JSON.stringify({
+        code: pendingCode,
+        phone_number_id: waSession.phone_number_id,
+        waba_id: waSession.waba_id,
+        business_id: waSession.business_id,
+      }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { window.location = d.redirect || '/whatsapp/numbers/'; }
+        else {
+          completing = false;
+          if (connectBtn) connectBtn.disabled = false;
+          setStatus(d.error || 'Connection failed.', true);
+        }
+      })
+      .catch(function () {
+        completing = false;
+        if (connectBtn) connectBtn.disabled = false;
+        setStatus('Network error. Try again.', true);
+      });
+  }
+
   window.addEventListener('message', function (event) {
     console.log('[wa-embedded] postMessage', event.origin, event.data);
     if (event.origin !== 'https://www.facebook.com' &&
@@ -321,41 +367,46 @@
           waSession.phone_number_id = data.data.phone_number_id;
           waSession.waba_id = data.data.waba_id;
           waSession.business_id = data.data.business_id;
+          tryCompleteConnection();
         }
       }
     } catch (e) { console.warn('[wa-embedded] message JSON.parse failed', e, event.data); }
   });
 
-  function setStatus(msg, isError) {
-    const el = document.getElementById('wa-connect-status');
-    el.textContent = msg;
-    el.classList.remove('hidden');
-    el.classList.toggle('text-red-600', !!isError);
+  // Some FB SDK sessions return the OAuth code only inside the signed_request's
+  // base64url-encoded payload (as `code`), not directly on authResponse.code.
+  function extractCodeFromSignedRequest(signedRequest) {
+    if (!signedRequest) return null;
+    const parts = signedRequest.split('.');
+    if (parts.length !== 2) return null;
+    try {
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(decodeURIComponent(escape(window.atob(base64))));
+      return payload.code || null;
+    } catch (e) {
+      console.warn('[wa-embedded] signed_request decode failed', e);
+      return null;
+    }
   }
 
   document.getElementById('wa-connect-btn').addEventListener('click', function () {
-    const btn = this;
+    connectBtn = this;
     FB.login(function (response) {
       console.log('[wa-embedded] FB.login response', response, 'waSession', waSession);
-      if (response.authResponse && response.authResponse.code) {
-        btn.disabled = true;
+      const authResponse = response.authResponse;
+      const code = authResponse && (authResponse.code ||
+        extractCodeFromSignedRequest(authResponse.signedRequest));
+      if (authResponse && code) {
+        pendingCode = code;
         setStatus('Finishing connection…', false);
-        fetch('/whatsapp/connect/complete/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-          body: JSON.stringify({
-            code: response.authResponse.code,
-            phone_number_id: waSession.phone_number_id,
-            waba_id: waSession.waba_id,
-            business_id: waSession.business_id,
-          }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (d.ok) { window.location = d.redirect || '/whatsapp/numbers/'; }
-            else { btn.disabled = false; setStatus(d.error || 'Connection failed.', true); }
-          })
-          .catch(function () { btn.disabled = false; setStatus('Network error. Try again.', true); });
+        tryCompleteConnection();
+        // The FINISH postMessage can arrive after this callback. Give it a window
+        // before giving up, instead of failing immediately for missing session info.
+        if (!completing) {
+          waitTimer = setTimeout(function () {
+            if (!completing) setStatus('Connection details missing. Try again.', true);
+          }, 15000);
+        }
       } else {
         setStatus('Onboarding was cancelled.', true);
       }
