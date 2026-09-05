@@ -358,8 +358,7 @@
 
   window.addEventListener('message', function (event) {
     console.log('[wa-embedded] postMessage', event.origin, event.data);
-    if (event.origin !== 'https://www.facebook.com' &&
-        event.origin !== 'https://web.facebook.com') return;
+    if (!event.origin.endsWith('facebook.com')) return;
     try {
       const data = JSON.parse(event.data);
       if (data.type === 'WA_EMBEDDED_SIGNUP') {
@@ -415,10 +414,7 @@
       response_type: 'code',
       override_default_response_type: true,
       extras: {
-        featureType: 'whatsapp_business_app_onboarding',
-        sessionInfoVersion: '3',
-        version: 'v4-public-preview',
-        features: [{ name: 'marketing_messages_lite' }],
+        setup: {},
       },
     });
   });
