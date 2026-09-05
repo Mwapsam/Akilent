@@ -325,7 +325,9 @@
   }
 
   function tryCompleteConnection() {
-    if (completing || !pendingCode || !waSession.phone_number_id) return;
+    if (completing) return;
+    if (!pendingCode) { console.log('[wa-embedded] waiting for OAuth code'); return; }
+    if (!waSession.phone_number_id) { console.log('[wa-embedded] waiting for phone_number_id'); return; }
     completing = true;
     if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
     if (connectBtn) connectBtn.disabled = true;
@@ -359,17 +361,29 @@
   window.addEventListener('message', function (event) {
     console.log('[wa-embedded] postMessage', event.origin, event.data);
     if (!event.origin.endsWith('facebook.com')) return;
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'WA_EMBEDDED_SIGNUP') {
-        if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
-          waSession.phone_number_id = data.data.phone_number_id;
-          waSession.waba_id = data.data.waba_id;
-          waSession.business_id = data.data.business_id;
-          tryCompleteConnection();
-        }
+
+    // Meta may send event.data as a JSON string or as an already-parsed object.
+    let data = event.data;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        console.warn('[wa-embedded] message JSON.parse failed', e, event.data);
+        return;
       }
-    } catch (e) { console.warn('[wa-embedded] message JSON.parse failed', e, event.data); }
+    }
+
+    if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') return;
+    console.log('[wa-embedded] signup event', data);
+
+    if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
+      const session = data.data || {};
+      waSession.phone_number_id = session.phone_number_id || null;
+      waSession.waba_id = session.waba_id || null;
+      waSession.business_id = session.business_id || null;
+      console.log('[wa-embedded] session received', waSession);
+      tryCompleteConnection();
+    }
   });
 
   // Some FB SDK sessions return the OAuth code only inside the signed_request's
